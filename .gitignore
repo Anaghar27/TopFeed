@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+
+# Env
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# ML artifacts
+ml/data/raw/mind/large/extracted/
+ml/data/raw/mind/large/zips/
+
+# Docker
+**/.dockerignore
