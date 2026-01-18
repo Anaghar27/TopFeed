@@ -1,5 +1,6 @@
 import os
 
+import psycopg2
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -28,3 +29,13 @@ def check_db_connection() -> None:
     engine = get_engine()
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
+
+
+def get_psycopg_conn():
+    return psycopg2.connect(
+        host=_get_env("DB_HOST"),
+        port=_get_env("DB_PORT"),
+        dbname=_get_env("DB_NAME"),
+        user=_get_env("DB_USER"),
+        password=_get_env("DB_PASSWORD"),
+    )

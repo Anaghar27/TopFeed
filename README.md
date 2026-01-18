@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 2. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 3. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 2. It will 
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2):
+Flow (Step 1 + Step 2 + Step 3):
 
 ```
 MIND-large zips
@@ -38,6 +38,9 @@ items.embedding (pgvector)
   |
   v
 HNSW index + similarity search
+  |
+  v
+Personalized retrieval (FastAPI)
 ```
 
 ---
@@ -47,6 +50,8 @@ HNSW index + similarity search
 ```
 apps/
   backend/        # FastAPI + Alembic
+    app/api/      # API routes (retrieval service)
+    app/services/ # Retrieval logic
   frontend/       # React + Vite + Tailwind
 infra/
 ml/
@@ -174,6 +179,27 @@ LIMIT 10;
 ```
 
 ---
+
+# Step 3: Personalized Retrieval (pgvector + FastAPI)
+
+### 1) Start services
+```
+docker compose up -d --build
+```
+
+### 2) Personalized retrieval
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":50,"history_k":50}'
+```
+
+### 3) Debug user vector
+```
+curl http://localhost:8000/retrieve/debug/<USER_ID>
+```
+
+If a user has no usable clicks/embeddings, the service returns popular items from train/dev.
 
 ## Notes
 
