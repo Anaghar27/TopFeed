@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_psycopg_conn
+from app.services.reranker import rerank as rerank_candidates
 from app.services.retrieval_pgvector import (
     build_user_vector,
     get_recent_seen_news_ids,
@@ -35,6 +36,7 @@ class RetrievalRequest(BaseModel):
     user_id: str
     top_n: int = Field(default=200, ge=1, le=1000)
     history_k: int = Field(default=50, ge=1, le=500)
+    rerank: bool = True
 
 
 class RetrievalItem(BaseModel):
@@ -74,6 +76,8 @@ def retrieve_candidates(request: RetrievalRequest):
 
         exclude_ids = get_recent_seen_news_ids(conn, request.user_id, exclude_recent_m)
         items = retrieve_by_vector(conn, user_vec, top_n, exclude_ids)
+        if request.rerank:
+            items = rerank_candidates(conn, request.user_id, items, history_k, half_life_days)
         return RetrievalResponse(user_id=request.user_id, items=items, method="personalized")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

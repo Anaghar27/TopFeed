@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 3. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 4. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 3. It will 
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3):
+Flow (Step 1 + Step 2 + Step 3 + Step 4):
 
 ```
 MIND-large zips
@@ -41,6 +41,9 @@ HNSW index + similarity search
   |
   v
 Personalized retrieval (FastAPI)
+  |
+  v
+Baseline reranker (FastAPI)
 ```
 
 ---
@@ -51,7 +54,7 @@ Personalized retrieval (FastAPI)
 apps/
   backend/        # FastAPI + Alembic
     app/api/      # API routes (retrieval service)
-    app/services/ # Retrieval logic
+    app/services/ # Retrieval + reranker logic
   frontend/       # React + Vite + Tailwind
 infra/
 ml/
@@ -200,6 +203,54 @@ curl http://localhost:8000/retrieve/debug/<USER_ID>
 ```
 
 If a user has no usable clicks/embeddings, the service returns popular items from train/dev.
+
+---
+
+# Step 4: Baseline Reranker (relevance-first)
+
+The reranker is a lightweight logistic regression model trained on train/dev impressions.
+It scores candidate items and reorders the retrieval list (relevance-first, no diversification yet).
+
+### 1) Build reranker dataset
+```
+docker compose exec backend python /app/ml/scripts/build_reranker_dataset.py
+```
+
+Optional env vars:
+```
+RERANK_SPLITS=train,dev
+RERANK_MAX_ROWS=50000
+RERANK_MAX_ROWS_TRAIN=200000
+RERANK_MAX_ROWS_DEV=50000
+RERANK_NEG_PER_POS=1
+RERANK_NEG_HASH_PCT=5
+```
+
+### 2) Train reranker
+```
+docker compose exec backend python /app/ml/scripts/train_reranker.py
+```
+
+Expected metrics output:
+- AUC
+- nDCG@10
+- MRR@10
+
+### 3) Run reranked retrieval
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":10,"history_k":50,"rerank":true}'
+```
+
+### 4) Compare to retrieval-only
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":10,"history_k":50,"rerank":false}'
+```
+
+If the order differs, the reranker is active.
 
 ## Notes
 

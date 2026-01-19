@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,8 @@ from app.api.routes_retrieval import router as retrieval_router
 from app.db import check_db_connection
 
 app = FastAPI(title="ToPFeed Backend")
+
+logging.basicConfig(level=logging.INFO)
 
 allowed_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 

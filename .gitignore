@@ -23,6 +23,8 @@ dist/
 # ML artifacts
 ml/data/raw/mind/large/extracted/
 ml/data/raw/mind/large/zips/
+ml/data/processed/reranker/
+ml/models/reranker_baseline/
 
 # Docker
 **/.dockerignore
