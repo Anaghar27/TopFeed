@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes_retrieval import router as retrieval_router
+from app.api.routes_top import router as top_router
 from app.db import check_db_connection
 
 app = FastAPI(title="ToPFeed Backend")
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(retrieval_router)
+app.include_router(top_router)
 
 
 @app.get("/health")

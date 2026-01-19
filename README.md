@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 4. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 5. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 4. It will 
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4):
+Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5):
 
 ```
 MIND-large zips
@@ -44,6 +44,9 @@ Personalized retrieval (FastAPI)
   |
   v
 Baseline reranker (FastAPI)
+  |
+  v
+Tree of Preferences (ToP) builder + API
 ```
 
 ---
@@ -54,7 +57,7 @@ Baseline reranker (FastAPI)
 apps/
   backend/        # FastAPI + Alembic
     app/api/      # API routes (retrieval service)
-    app/services/ # Retrieval + reranker logic
+    app/services/ # Retrieval + reranker + ToP logic
   frontend/       # React + Vite + Tailwind
 infra/
 ml/
@@ -251,6 +254,45 @@ curl -X POST http://localhost:8000/retrieve \\
 ```
 
 If the order differs, the reranker is active.
+
+---
+
+# Step 5: Tree of Preferences (ToP)
+
+ToP builds a per-user tree from train/dev impressions (root → category → subcategory).
+Each node stores exposures, clicks, CTR, recency-weighted interest/exposure, and an underexplored score.
+
+### 1) Create ToP tables
+```
+cat ml/scripts/sql/create_top_tables.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+```
+
+### 2) Build ToP for one user
+```
+docker compose exec backend python /app/ml/scripts/build_top.py --user_id U483745
+```
+
+### 3) Build ToP for N users
+```
+docker compose exec backend python /app/ml/scripts/build_top.py --limit_users 1000
+```
+
+### 4) Fetch via API
+```
+curl http://localhost:8000/users/U483745/top
+curl http://localhost:8000/users/U483745/top/nodes
+```
+
+### 5) Verify in SQL
+```
+SELECT user_id, generated_at FROM user_top ORDER BY generated_at DESC LIMIT 5;
+
+SELECT path, underexplored_score, clicks, exposures
+FROM user_top_nodes
+WHERE user_id = '<USER_ID>'
+ORDER BY underexplored_score DESC
+LIMIT 20;
+```
 
 ## Notes
 
