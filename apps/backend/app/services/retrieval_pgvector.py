@@ -200,6 +200,74 @@ def retrieve_popular(conn, top_n: int, splits: tuple[str, ...] = ("train", "dev"
     ]
 
 
+def retrieve_underexplored(conn, user_id: str, top_n: int, exclude_news_ids=None, max_nodes: int = 12):
+    if top_n <= 0:
+        return []
+    if exclude_news_ids is None:
+        exclude_news_ids = []
+
+    per_category = max(1, int(math.ceil(top_n / max_nodes)))
+
+    if exclude_news_ids:
+        exclude_clause = "AND i.news_id <> ALL(%s)"
+        params = [user_id, max_nodes, exclude_news_ids, per_category, top_n]
+    else:
+        exclude_clause = ""
+        params = [user_id, max_nodes, per_category, top_n]
+
+    sql = f"""
+        WITH top_categories AS (
+            SELECT category, MAX(underexplored_score) AS score
+            FROM user_top_nodes
+            WHERE user_id = %s
+            GROUP BY category
+            ORDER BY score DESC
+            LIMIT %s
+        ),
+        candidates AS (
+            SELECT i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url,
+                   COUNT(im.*) FILTER (WHERE im.clicked) AS clicks,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY i.category
+                       ORDER BY COUNT(im.*) FILTER (WHERE im.clicked) DESC NULLS LAST, i.news_id
+                   ) AS rn
+            FROM items i
+            JOIN top_categories n
+              ON i.category = n.category
+            LEFT JOIN impressions im
+              ON im.news_id = i.news_id
+             AND im.split IN ('train', 'dev')
+             AND im.clicked = TRUE
+            WHERE i.embedding IS NOT NULL
+            {exclude_clause}
+            GROUP BY i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url
+        )
+        SELECT news_id, title, abstract, category, subcategory, url,
+               COALESCE(clicks, 0) AS score
+        FROM candidates
+        WHERE rn <= %s
+        ORDER BY score DESC, news_id
+        LIMIT %s
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        rows = cur.fetchall()
+
+    return [
+        {
+            "news_id": row[0],
+            "title": row[1],
+            "abstract": row[2],
+            "category": row[3],
+            "subcategory": row[4],
+            "url": row[5],
+            "score": float(row[6]),
+        }
+        for row in rows
+    ]
+
+
 def get_recent_seen_news_ids(conn, user_id: str, m: int, splits: tuple[str, ...] = ("train", "dev")):
     if m <= 0:
         return []

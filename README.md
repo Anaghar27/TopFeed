@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 5. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 6. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 5. It will 
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5):
+Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6):
 
 ```
 MIND-large zips
@@ -47,6 +47,9 @@ Baseline reranker (FastAPI)
   |
   v
 Tree of Preferences (ToP) builder + API
+  |
+  v
+ToP-guided diversified feed (hybrid candidate pool + greedy re-ranker)
 ```
 
 ---
@@ -83,6 +86,23 @@ DB_PASSWORD=topfeed
 DB_NAME=topfeed
 FRONTEND_ORIGIN=http://localhost:5173
 VITE_API_BASE=http://localhost:8000
+
+RERANK_MAX_ROWS_TRAIN=200000
+RERANK_MAX_ROWS_DEV=50000
+RERANK_NEG_PER_POS=5
+RERANK_NEG_HASH_PCT=10
+RERANK_SPLITS=train,dev
+RERANKER_MODEL_PATH=/app/ml/models/reranker_baseline/model.joblib
+RERANKER_CONFIG_PATH=/app/ml/models/reranker_baseline/training_config.json
+
+CANDIDATE_POOL_N=200
+EXPLORE_POOL_RATIO=0.2
+W_REL_BASE=1.0
+W_TOP_BASE=0.5
+W_REP_BASE=0.6
+W_COV_BASE=0.4
+MAX_SUBCAT_PER_FEED=3
+MAX_CAT_PER_FEED=8
 ```
 
 ---
@@ -225,8 +245,8 @@ RERANK_SPLITS=train,dev
 RERANK_MAX_ROWS=50000
 RERANK_MAX_ROWS_TRAIN=200000
 RERANK_MAX_ROWS_DEV=50000
-RERANK_NEG_PER_POS=1
-RERANK_NEG_HASH_PCT=5
+RERANK_NEG_PER_POS=5
+RERANK_NEG_HASH_PCT=10
 ```
 
 ### 2) Train reranker
@@ -294,6 +314,47 @@ ORDER BY underexplored_score DESC
 LIMIT 20;
 ```
 
+# Step 6: ToP-guided Diversified Feed (Hybrid Candidate Pool)
+
+Step 6 adds a hybrid candidate pool plus a greedy diversification step guided by ToP signals.
+
+Hybrid candidate pool:
+- Vector retrieval (personalized neighbors)
+- Exploration pool from underexplored categories (fallback: popular items)
+- Merge, dedupe, then rerank + diversify to final K
+
+### 1) Candidate pool + diversification
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":20,"history_k":50,"explore_level":0.0,"diversify":true}'
+
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":20,"history_k":50,"explore_level":1.0,"diversify":true}'
+```
+
+Expected:
+- `explore_level=0.0` keeps relevance strong and diversity low
+- `explore_level=1.0` increases category/subcategory coverage and ILD
+ - `MAX_SUBCAT_PER_FEED` and `MAX_CAT_PER_FEED` cap repetition
+
+### 2) Verify candidate pool diversity
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":200,"history_k":50,"rerank":false,"diversify":false}' \\
+| python -c "import sys,json; d=json.load(sys.stdin); print(len(set(x['category'] for x in d['items'])))"
+```
+
+### 3) Check diversification metrics
+```
+curl -X POST http://localhost:8000/retrieve \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":20,"history_k":50,"explore_level":1.0,"diversify":true}' \\
+| python -c "import sys,json; d=json.load(sys.stdin); print(d['diversification'])"
+```
+
 ## Notes
 
 - Postgres is the only database.
@@ -304,7 +365,6 @@ LIMIT 20;
 
 ## Upcoming (Planned)
 
-- User embeddings
-- Retrieval + diversification logic
-- API endpoints for personalized feed
-- Evaluation and monitoring
+- Multi-stage ToP diversification
+- LLM-guided preference refinement
+- Evaluation dashboard and monitoring

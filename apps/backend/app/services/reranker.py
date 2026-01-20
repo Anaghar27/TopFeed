@@ -87,9 +87,9 @@ def compute_features(candidate, item_data, user_vec, user_categories, user_last_
 
     category_match = 1.0 if category and category in user_categories else 0.0
 
+    # In inference we don't have candidate timestamps; avoid "now"-based recency
+    # which can be far outside training ranges and collapse scores.
     user_recency_days = 0.0
-    if user_last_time:
-        user_recency_days = max((datetime.utcnow() - user_last_time).total_seconds() / 86400.0, 0.0)
 
     cosine_sim = 0.0
     item_vec = item_data.get("embedding")
@@ -153,3 +153,40 @@ def rerank(conn, user_id: str, candidates, history_k: int, half_life_days: float
 
     reranked.sort(key=lambda x: x["score"], reverse=True)
     return reranked
+
+
+def score_candidates(conn, user_id: str, candidates, history_k: int, half_life_days: float):
+    model, config = load_model()
+    if model is None or config is None:
+        return [float(item.get("score", 0.0)) for item in candidates]
+
+    clicks = get_user_click_history(conn, user_id, history_k)
+    user_vec, _ = build_user_vector(conn, clicks, half_life_days)
+    if user_vec is None:
+        return [float(item.get("score", 0.0)) for item in candidates]
+
+    user_last_time = None
+    for click in clicks:
+        ts = parse_time(click.get("time"))
+        if ts and (user_last_time is None or ts > user_last_time):
+            user_last_time = ts
+
+    news_ids = [item["news_id"] for item in candidates]
+    item_map = get_item_embeddings(conn, news_ids)
+
+    user_categories = set()
+    click_ids = [click.get("news_id") for click in clicks]
+    click_categories = get_news_categories(conn, click_ids)
+    for category in click_categories.values():
+        if category:
+            user_categories.add(category)
+
+    features = []
+    for idx, cand in enumerate(candidates, start=1):
+        item_info = item_map.get(cand["news_id"], {})
+        features.append(
+            compute_features(cand, item_info, user_vec, user_categories, user_last_time, config, idx)
+        )
+
+    scores = model.predict_proba(np.array(features))[:, 1]
+    return [float(score) for score in scores]
