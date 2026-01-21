@@ -17,6 +17,17 @@ export default function FeedPage() {
   const [activeItem, setActiveItem] = useState(null);
   const [previewItem, setPreviewItem] = useState(null);
   const [message, setMessage] = useState("");
+  const preferredByCategory = useMemo(() => {
+    const grouped = {};
+    for (const item of preferredItems) {
+      const key = item.category || "uncategorized";
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(item);
+    }
+    return Object.entries(grouped).sort((a, b) => b[1].length - a[1].length);
+  }, [preferredItems]);
 
   const payload = useMemo(
     () => ({
@@ -178,9 +189,6 @@ export default function FeedPage() {
             <h1 className="mt-2 text-3xl font-semibold text-[color:var(--text)]">
               {activeView === "feed" ? "Personalized feed" : "Preferred list"}
             </h1>
-            <p className="mt-1 text-sm text-[color:var(--muted)]">
-              {activeView === "feed" ? `status: ${status}` : `saved topics for ${userId}`}
-            </p>
             <div className="mt-3 flex gap-2 text-xs font-semibold">
               <button
                 className={
@@ -288,15 +296,31 @@ export default function FeedPage() {
               </div>
             )}
             {!preferredLoading && preferredItems.length > 0 && (
-              <div className="grid gap-6 md:grid-cols-2">
-                {preferredItems.map((item) => (
-                  <FeedCard
-                    key={`preferred-${item.news_id}`}
-                    item={{ ...item, is_preferred: true }}
-                    onWhy={setActiveItem}
-                    onPreview={setPreviewItem}
-                    onPrefer={handlePrefer}
-                  />
+              <div className="grid gap-8">
+                {preferredByCategory.map(([category, group]) => (
+                  <div key={category} className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">
+                          {String(category).toUpperCase()}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--chip-text)]">
+                        {group.length} items
+                      </span>
+                    </div>
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      {group.map((item) => (
+                        <FeedCard
+                          key={`preferred-${item.news_id}`}
+                          item={{ ...item, is_preferred: true }}
+                          onWhy={setActiveItem}
+                          onPreview={setPreviewItem}
+                          onPrefer={handlePrefer}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
