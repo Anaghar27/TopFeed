@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 6. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 6 + frontend explainability and preferences UI. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 6. It will 
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6):
+Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX):
 
 ```
 MIND-large zips
@@ -50,6 +50,9 @@ Tree of Preferences (ToP) builder + API
   |
   v
 ToP-guided diversified feed (hybrid candidate pool + greedy re-ranker)
+  |
+  v
+Explainability + Preferences UI (Why this, hearts, preferred list)
 ```
 
 ---
@@ -337,7 +340,7 @@ curl -X POST http://localhost:8000/retrieve \\
 Expected:
 - `explore_level=0.0` keeps relevance strong and diversity low
 - `explore_level=1.0` increases category/subcategory coverage and ILD
- - `MAX_SUBCAT_PER_FEED` and `MAX_CAT_PER_FEED` cap repetition
+- `MAX_SUBCAT_PER_FEED` and `MAX_CAT_PER_FEED` cap repetition
 
 ### 2) Verify candidate pool diversity
 ```
@@ -354,6 +357,41 @@ curl -X POST http://localhost:8000/retrieve \\
   -d '{"user_id":"<USER_ID>","top_n":20,"history_k":50,"explore_level":1.0,"diversify":true}' \\
 | python -c "import sys,json; d=json.load(sys.stdin); print(d['diversification'])"
 ```
+
+---
+
+# Frontend UX: Explainability + Preferences
+
+The frontend uses `/feed` for the main list, shows “Why this?” explanations, and supports preferences with a heart icon.
+
+### 1) Fetch the diversified feed (UI)
+```
+curl -X POST http://localhost:8000/feed \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","top_n":30,"history_k":50,"diversify":true,"explore_level":0.6}'
+```
+
+### 2) Save or remove a preference (backend)
+```
+curl -X POST http://localhost:8000/feedback \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","news_id":"<NEWS_ID>","action":"prefer","split":"live"}'
+
+curl -X POST http://localhost:8000/feedback \\
+  -H "Content-Type: application/json" \\
+  -d '{"user_id":"<USER_ID>","news_id":"<NEWS_ID>","action":"unprefer","split":"live"}'
+```
+
+### 3) Preferred list (backend)
+```
+curl http://localhost:8000/users/<USER_ID>/preferred?limit=100
+```
+
+### 4) UI behavior
+- **Heart icon**: filled = preferred, outline = not preferred.
+- **Preferences tab**: shows preferred items in a separate view.
+- **Why this?** drawer: shows reason tags + score breakdown + evidence.
+- **Theme toggle**: switches light/dark mode.
 
 ## Notes
 
