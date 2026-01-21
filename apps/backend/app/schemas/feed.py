@@ -73,3 +73,13 @@ class PreferredItem(BaseModel):
 class PreferredResponse(BaseModel):
     user_id: str
     items: List[PreferredItem]
+
+
+class ExplainRequest(BaseModel):
+    user_id: str
+    item: FeedItem
+    method: Literal["personalized_top_diversified", "rerank_only", "popular_fallback"] = "rerank_only"
+
+
+class ExplainResponse(BaseModel):
+    item: FeedItem

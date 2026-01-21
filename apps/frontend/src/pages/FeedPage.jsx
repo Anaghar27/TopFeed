@@ -17,6 +17,9 @@ export default function FeedPage() {
   const [activeItem, setActiveItem] = useState(null);
   const [previewItem, setPreviewItem] = useState(null);
   const [message, setMessage] = useState("");
+  const [loadMs, setLoadMs] = useState(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const preferredByCategory = useMemo(() => {
     const grouped = {};
     for (const item of preferredItems) {
@@ -32,11 +35,11 @@ export default function FeedPage() {
   const payload = useMemo(
     () => ({
       user_id: userId,
-      top_n: 30,
+      top_n: 20,
       history_k: 50,
       diversify: true,
       explore_level: exploreLevel,
-      include_explanations: true
+      include_explanations: false
     }),
     [userId, exploreLevel]
   );
@@ -50,6 +53,7 @@ export default function FeedPage() {
     let alive = true;
 
     async function fetchFeed() {
+      const startedAt = performance.now();
       setLoading(true);
       setStatus("loading");
       try {
@@ -65,10 +69,13 @@ export default function FeedPage() {
         if (alive) {
           setItems(data.items || []);
           setStatus(data.method || "ok");
+          setPage(1);
+          setLoadMs(Math.round(performance.now() - startedAt));
         }
       } catch (error) {
         if (alive) {
           setStatus("error");
+          setLoadMs(null);
         }
       } finally {
         if (alive) {
@@ -82,6 +89,9 @@ export default function FeedPage() {
       alive = false;
     };
   }, [payload]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const pagedItems = items.slice((page - 1) * pageSize, page * pageSize);
 
   useEffect(() => {
     let alive = true;
@@ -115,6 +125,37 @@ export default function FeedPage() {
       alive = false;
     };
   }, [userId, activeView]);
+
+  async function handleWhy(item) {
+    if (item.explanation) {
+      setActiveItem(item);
+      return;
+    }
+    setActiveItem({ ...item, explanation: null });
+    try {
+      const response = await fetch(`${API_BASE}/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          item,
+          method: status === "personalized_top_diversified" ? status : status === "popular_fallback" ? status : "rerank_only"
+        })
+      });
+      if (!response.ok) {
+        throw new Error("explain failed");
+      }
+      const data = await response.json();
+      const explainedItem = data.item || item;
+      setItems((prev) =>
+        prev.map((entry) => (entry.news_id === explainedItem.news_id ? explainedItem : entry))
+      );
+      setActiveItem(explainedItem);
+    } catch (error) {
+      setMessage("Could not load explanation");
+      setTimeout(() => setMessage(""), 2000);
+    }
+  }
 
   async function handlePrefer(item) {
     const isPreferred = Boolean(item.is_preferred);
@@ -189,6 +230,11 @@ export default function FeedPage() {
             <h1 className="mt-2 text-3xl font-semibold text-[color:var(--text)]">
               {activeView === "feed" ? "Personalized feed" : "Preferred list"}
             </h1>
+            {activeView === "feed" && loadMs !== null && (
+              <p className="mt-2 text-xs font-semibold text-[color:var(--muted)]">
+                load time: {loadMs} ms
+              </p>
+            )}
             <div className="mt-3 flex gap-2 text-xs font-semibold">
               <button
                 className={
@@ -271,11 +317,11 @@ export default function FeedPage() {
 
         {activeView === "feed" && !loading && (
           <div className="mt-8 grid gap-6">
-            {items.map((item) => (
+            {pagedItems.map((item) => (
               <FeedCard
                 key={item.news_id}
                 item={item}
-                onWhy={setActiveItem}
+                onWhy={handleWhy}
                 onPreview={setPreviewItem}
                 onPrefer={handlePrefer}
               />
@@ -314,7 +360,7 @@ export default function FeedPage() {
                         <FeedCard
                           key={`preferred-${item.news_id}`}
                           item={{ ...item, is_preferred: true }}
-                          onWhy={setActiveItem}
+                          onWhy={handleWhy}
                           onPreview={setPreviewItem}
                           onPrefer={handlePrefer}
                         />
@@ -324,6 +370,24 @@ export default function FeedPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeView === "feed" && totalPages > 1 && !loading && (
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+            {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((num) => (
+              <button
+                key={`page-${num}`}
+                className={
+                  num === page
+                    ? "rounded-full bg-[color:var(--accent-strong)] px-3 py-1 text-xs font-semibold text-[color:var(--text)]"
+                    : "rounded-full border border-[color:var(--panel-border)] px-3 py-1 text-xs font-semibold text-[color:var(--muted)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
+                }
+                onClick={() => setPage(num)}
+              >
+                {num}
+              </button>
+            ))}
           </div>
         )}
       </div>

@@ -52,3 +52,22 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-strong) var(--bg);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--accent-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}

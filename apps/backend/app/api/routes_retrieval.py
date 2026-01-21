@@ -6,7 +6,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_psycopg_conn
-from app.schemas.feed import FeedRequest, FeedResponse, PreferredResponse
+from app.schemas.feed import ExplainRequest, ExplainResponse, FeedRequest, FeedResponse, PreferredResponse
 from app.services.explain import (
     build_explanations,
     load_recent_clicks,
@@ -208,6 +208,30 @@ def feedback(payload: dict):
         conn.close()
 
     return {"status": "ok"}
+
+
+@router.post("/explain", response_model=ExplainResponse)
+def explain_item(request: ExplainRequest):
+    history_k = get_int_env("USER_HISTORY_K", 50)
+    conn = get_psycopg_conn()
+    try:
+        clicks = get_user_click_history(conn, request.user_id, history_k)
+        top_stats = load_top_node_stats(conn, request.user_id)
+        recent_clicks = load_recent_clicks(conn, clicks)
+        preferred_ids = load_user_preferred_ids(conn, request.user_id)
+        explained = build_explanations(
+            request.user_id,
+            [request.item.model_dump()],
+            {
+                "method": request.method,
+                "top_node_stats": top_stats,
+                "recent_clicks": recent_clicks,
+                "preferred_ids": preferred_ids,
+            },
+        )
+        return ExplainResponse(item=explained[0])
+    finally:
+        conn.close()
 
 
 @router.get("/users/{user_id}/preferred", response_model=PreferredResponse)

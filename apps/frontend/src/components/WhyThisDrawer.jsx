@@ -45,59 +45,72 @@ export default function WhyThisDrawer({ item, open, onClose }) {
           </button>
         </div>
 
-        <p className="mt-4 text-sm text-[color:var(--muted)]">{explanation?.top_path || "Unknown topic"}</p>
+        {!explanation && (
+          <p className="mt-4 text-sm text-[color:var(--muted)]">Loading explanation...</p>
+        )}
+        {explanation && (
+          <p className="mt-4 text-sm text-[color:var(--muted)]">{explanation.top_path || "Unknown topic"}</p>
+        )}
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(explanation?.reason_tags || []).map((tag) => (
-            <span
-              key={tag}
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${tagStyles[tag] || "bg-[color:var(--chip-bg)] text-[color:var(--chip-text)]"}`}
-            >
-              {tag.replaceAll("_", " ")}
-            </span>
-          ))}
-        </div>
+        {explanation && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(explanation.reason_tags || []).map((tag) => (
+              <span
+                key={tag}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${tagStyles[tag] || "bg-[color:var(--chip-bg)] text-[color:var(--chip-text)]"}`}
+              >
+                {tag.replaceAll("_", " ")}
+              </span>
+            ))}
+          </div>
+        )}
 
-        <div className="mt-6 space-y-4">
-          <ProgressRow label="relevance" value={breakdown.rel_score_norm} />
-          <ProgressRow label="underexplored bonus" value={breakdown.top_bonus_norm} />
-          <ProgressRow label="coverage gain" value={breakdown.coverage_gain_norm} />
-          <ProgressRow label="repetition penalty" value={breakdown.redundancy_penalty_norm} />
-        </div>
+        {explanation && (
+          <div className="mt-6 space-y-4">
+            <ProgressRow label="relevance" value={breakdown.rel_score_norm} />
+            <ProgressRow label="underexplored bonus" value={breakdown.top_bonus_norm} />
+            <ProgressRow label="coverage gain" value={breakdown.coverage_gain_norm} />
+            <ProgressRow label="repetition penalty" value={breakdown.redundancy_penalty_norm} />
+          </div>
+        )}
 
-        <div className="mt-6 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-4 text-sm text-[color:var(--muted)]">
-          <p className="font-semibold text-[color:var(--text)]">Evidence</p>
-          {evidence.recent_clicks_used?.length ? (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
-                You recently clicked
-              </p>
-              {evidence.recent_clicks_used.map((click) => (
-                <p key={click.news_id} className="text-sm text-[color:var(--text)]">
-                  {click.title || click.news_id}
-                </p>
-              ))}
+        {explanation && (
+          <>
+            <div className="mt-6 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-4 text-sm text-[color:var(--muted)]">
+              <p className="font-semibold text-[color:var(--text)]">Evidence</p>
+              {evidence.recent_clicks_used?.length ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+                    You recently clicked
+                  </p>
+                  {evidence.recent_clicks_used.map((click) => (
+                    <p key={click.news_id} className="text-sm text-[color:var(--text)]">
+                      {click.title || click.news_id}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">No recent clicks available.</p>
+              )}
+
+              {evidence.top_node_stats && (
+                <div className="mt-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">ToP signals</p>
+                  <p className="mt-2 text-sm text-[color:var(--text)]">
+                    clicks: {evidence.top_node_stats.clicks}, exposures: {evidence.top_node_stats.exposures}
+                  </p>
+                  <p className="text-sm text-[color:var(--text)]">
+                    underexplored score: {evidence.top_node_stats.underexplored_score?.toFixed?.(3)}
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            <p className="mt-2 text-sm text-slate-500">No recent clicks available.</p>
-          )}
 
-          {evidence.top_node_stats && (
-            <div className="mt-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">ToP signals</p>
-              <p className="mt-2 text-sm text-[color:var(--text)]">
-                clicks: {evidence.top_node_stats.clicks}, exposures: {evidence.top_node_stats.exposures}
-              </p>
-              <p className="text-sm text-[color:var(--text)]">
-                underexplored score: {evidence.top_node_stats.underexplored_score?.toFixed?.(3)}
-              </p>
+            <div className="mt-4 text-xs text-[color:var(--muted)]">
+              method: {explanation.method || "unknown"}
             </div>
-          )}
-        </div>
-
-        <div className="mt-4 text-xs text-[color:var(--muted)]">
-          method: {explanation?.method || "unknown"}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
