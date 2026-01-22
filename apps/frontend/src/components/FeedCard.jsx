@@ -1,6 +1,8 @@
-export default function FeedCard({ item, onWhy, onPreview, onPrefer }) {
+export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
   const isPreference = Boolean(item.is_preferred);
-  const isUnderexplored = item.explanation?.reason_tags?.includes("underexplored_interest");
+  const isUnderexplored =
+    Boolean(item.is_new_interest) ||
+    (isPreference && item.explanation?.reason_tags?.includes("underexplored_interest"));
   const showScore = Number.isFinite(item.score);
 
   return (
@@ -58,7 +60,7 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer }) {
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-[color:var(--muted)]">
         {showScore && (
           <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-            score {item.score.toFixed(3)}
+            score {item.score}
           </span>
         )}
         <button
@@ -73,6 +75,7 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer }) {
             href={item.url}
             target="_blank"
             rel="noreferrer"
+            onClick={() => onRead?.(item)}
           >
             read full article
           </a>

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import uuid
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
@@ -27,6 +28,49 @@ from app.services.retrieval_pgvector import (
 router = APIRouter()
 
 
+def _normalize_scores(values):
+    if not values:
+        return []
+    min_val = min(values)
+    max_val = max(values)
+    if max_val - min_val == 0:
+        return [0.0 for _ in values]
+    return [(v - min_val) / (max_val - min_val) for v in values]
+
+
+def _top_percent_threshold(values, percent):
+    if not values:
+        return 1.0
+    values_sorted = sorted(values, reverse=True)
+    idx = max(0, int(np.ceil(len(values_sorted) * percent)) - 1)
+    return values_sorted[idx]
+
+
+def load_preferred_category_counts(conn, user_id: str):
+    sql = """
+        SELECT i.category, i.subcategory, COUNT(DISTINCT im.news_id)
+        FROM impressions im
+        JOIN sessions s
+          ON s.impression_id = im.impression_id
+         AND s.split = im.split
+        JOIN items i ON i.news_id = im.news_id
+        WHERE s.user_id = %s
+          AND s.split = 'live'
+          AND im.clicked = TRUE
+        GROUP BY i.category, i.subcategory
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (user_id,))
+        rows = cur.fetchall()
+    counts = {}
+    for category, subcategory, count in rows:
+        if not category:
+            continue
+        path = f"{category}/{subcategory}" if subcategory else category
+        counts[path] = int(count or 0)
+    return counts
+
+
 def get_int_env(name: str, default: int) -> int:
     value = os.getenv(name)
     if not value:
@@ -41,17 +85,28 @@ def get_float_env(name: str, default: float) -> float:
     return float(value)
 
 
+def get_str_env(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return value
+
+
 def _handle_feed(request: FeedRequest, include_explanations: bool = True):
+    request_id = uuid.uuid4().hex
     top_n = request.top_n or get_int_env("RETRIEVE_TOP_N", 200)
     candidate_pool_n = max(top_n, get_int_env("CANDIDATE_POOL_N", 200))
     explore_ratio = get_float_env("EXPLORE_POOL_RATIO", 0.2)
-    explore_ratio = max(0.0, min(0.5, explore_ratio))
+    explore_ratio = max(0.0, min(0.5, explore_ratio)) * max(0.0, min(1.0, request.explore_level))
     history_k = request.history_k or get_int_env("USER_HISTORY_K", 50)
     half_life_days = get_float_env("USER_HALF_LIFE_DAYS", 7.0)
     exclude_recent_m = get_int_env("EXCLUDE_RECENT_M", 200)
 
     conn = get_psycopg_conn()
     try:
+        preferred_ids = load_user_preferred_ids(conn, request.user_id)
+        preferred_counts = load_preferred_category_counts(conn, request.user_id)
+        top_stats = None
         clicks = get_user_click_history(conn, request.user_id, history_k)
         if clicks:
             user_vec, _ = build_user_vector(conn, clicks, half_life_days)
@@ -61,10 +116,10 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
         if user_vec is None:
             items = retrieve_popular(conn, top_n)
             method = "popular_fallback"
+            model_version = get_str_env("POPULAR_MODEL_VERSION", "popular:v1")
             if include_explanations:
                 top_stats = load_top_node_stats(conn, request.user_id)
                 recent_clicks = load_recent_clicks(conn, clicks)
-                preferred_ids = load_user_preferred_ids(conn, request.user_id)
                 items = build_explanations(
                     request.user_id,
                     items,
@@ -73,9 +128,25 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                         "top_node_stats": top_stats,
                         "recent_clicks": recent_clicks,
                         "preferred_ids": preferred_ids,
+                        "preferred_category_counts": preferred_counts,
                     },
                 )
-            return FeedResponse(user_id=request.user_id, items=items, method=method)
+            else:
+                for item in items:
+                    if item.get("news_id") in preferred_ids:
+                        item["is_preferred"] = True
+                        category = item.get("category")
+                        subcategory = item.get("subcategory")
+                        path = f"{category}/{subcategory}" if subcategory else category
+                        if preferred_counts.get(path, 0) < 5:
+                            item["is_new_interest"] = True
+            return FeedResponse(
+                user_id=request.user_id,
+                items=items,
+                method=method,
+                request_id=request_id,
+                model_version=model_version,
+            )
 
         exclude_ids = get_recent_seen_news_ids(conn, request.user_id, exclude_recent_m)
 
@@ -122,13 +193,14 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                 top_n,
             )
             method = "personalized_top_diversified"
+            model_version = get_str_env("TOP_DIV_MODEL_VERSION", "top_div:v1")
         else:
             method = "rerank_only"
+            model_version = get_str_env("RERANKER_MODEL_VERSION", "reranker_baseline:v1")
 
         if include_explanations:
             top_stats = load_top_node_stats(conn, request.user_id)
             recent_clicks = load_recent_clicks(conn, clicks)
-            preferred_ids = load_user_preferred_ids(conn, request.user_id)
             items = build_explanations(
                 request.user_id,
                 items,
@@ -137,14 +209,41 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                     "top_node_stats": top_stats,
                     "recent_clicks": recent_clicks,
                     "preferred_ids": preferred_ids,
+                    "preferred_category_counts": preferred_counts,
                 },
             )
+        else:
+            top_stats = load_top_node_stats(conn, request.user_id)
+            top_bonus = []
+            for item in items:
+                if item.get("news_id") in preferred_ids:
+                    item["is_preferred"] = True
+                    category = item.get("category")
+                    subcategory = item.get("subcategory")
+                    path = f"{category}/{subcategory}" if subcategory else category
+                    if preferred_counts.get(path, 0) < 5:
+                        item["is_new_interest"] = True
+                category = item.get("category")
+                subcategory = item.get("subcategory")
+                path = f"{category}/{subcategory}" if subcategory else category
+                top_bonus.append(float(top_stats.get(path, {}).get("underexplored_score", 0.0)))
+
+            top_norm = _normalize_scores(top_bonus)
+            top_threshold = _top_percent_threshold(top_norm, 0.3)
+            for idx, item in enumerate(items):
+                item["is_new_interest"] = (
+                    bool(item.get("is_preferred"))
+                    and top_norm[idx] >= top_threshold
+                    and top_norm[idx] > 0
+                )
 
         return FeedResponse(
             user_id=request.user_id,
             items=items[:top_n],
             method=method,
             diversification=metrics,
+            request_id=request_id,
+            model_version=model_version,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -227,6 +326,8 @@ def explain_item(request: ExplainRequest):
                 "top_node_stats": top_stats,
                 "recent_clicks": recent_clicks,
                 "preferred_ids": preferred_ids,
+                "preferred_category_counts": load_preferred_category_counts(conn, request.user_id),
+                "score_context": request.score_context or {},
             },
         )
         return ExplainResponse(item=explained[0])

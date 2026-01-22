@@ -49,6 +49,7 @@ class FeedItem(BaseModel):
     total_score: float | None = None
     top_path: str | None = None
     is_preferred: bool | None = None
+    is_new_interest: bool | None = None
     explanation: Optional[Explanation] = None
 
 
@@ -57,6 +58,8 @@ class FeedResponse(BaseModel):
     items: List[FeedItem]
     method: Literal["personalized_top_diversified", "rerank_only", "popular_fallback"]
     diversification: dict | None = None
+    request_id: str | None = None
+    model_version: str | None = None
 
 
 class PreferredItem(BaseModel):
@@ -79,6 +82,7 @@ class ExplainRequest(BaseModel):
     user_id: str
     item: FeedItem
     method: Literal["personalized_top_diversified", "rerank_only", "popular_fallback"] = "rerank_only"
+    score_context: dict | None = None
 
 
 class ExplainResponse(BaseModel):

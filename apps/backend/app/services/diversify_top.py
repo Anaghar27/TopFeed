@@ -60,6 +60,9 @@ def compute_weights(explore_level: float):
     w_rep_base = float(os.getenv("W_REP_BASE", 0.6))
     w_cov_base = float(os.getenv("W_COV_BASE", 0.4))
 
+    if explore_level <= 0.0:
+        return w_rel_base, 0.0, 0.0, 0.0
+
     w_rel = w_rel_base * (1.0 - 0.7 * explore_level)
     w_top = w_top_base * (0.3 + 0.7 * explore_level)
     w_rep = w_rep_base * (0.3 + 0.7 * explore_level)
@@ -85,8 +88,12 @@ def diversify_greedy(user_id, candidates, reranker_scores, explore_level: float,
     rel_scores = normalize_scores(reranker_scores)
 
     w_rel, w_top, w_rep, w_cov = compute_weights(explore_level)
-    max_subcat = int(os.getenv("MAX_SUBCAT_PER_FEED", "3"))
-    max_cat = int(os.getenv("MAX_CAT_PER_FEED", "8"))
+    if explore_level <= 0.0:
+        max_subcat = 1_000_000
+        max_cat = 1_000_000
+    else:
+        max_subcat = int(os.getenv("MAX_SUBCAT_PER_FEED", "3"))
+        max_cat = int(os.getenv("MAX_CAT_PER_FEED", "8"))
 
     selected = []
     selected_categories = set()

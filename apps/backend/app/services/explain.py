@@ -7,7 +7,17 @@ def _normalize(values):
     min_val = min(values)
     max_val = max(values)
     if max_val - min_val == 0:
-        return [0.0 for _ in values]
+        return [max(0.0, min(value, 1.0)) for value in values]
+    return [(v - min_val) / (max_val - min_val) for v in values]
+
+
+def _normalize_with_bounds(values, min_val, max_val):
+    if not values:
+        return []
+    if min_val is None or max_val is None:
+        return _normalize(values)
+    if max_val - min_val == 0:
+        return [max(0.0, min(value, 1.0)) for value in values]
     return [(v - min_val) / (max_val - min_val) for v in values]
 
 
@@ -87,16 +97,18 @@ def build_explanations(user_id, ranked_items, context):
     recent_clicks = context.get("recent_clicks", [])
     has_top = bool(top_node_stats)
     preferred_ids = context.get("preferred_ids", set())
+    preferred_counts = context.get("preferred_category_counts", {})
+    score_context = context.get("score_context") or {}
 
     rel_base = [float(item.get("rel_score", item.get("score", 0.0))) for item in ranked_items]
     top_base = [float(item.get("top_bonus", 0.0)) for item in ranked_items]
     rep_base = [float(item.get("redundancy_penalty", 0.0)) for item in ranked_items]
     cov_base = [float(item.get("coverage_gain", 0.0)) for item in ranked_items]
 
-    rel_norm = _normalize(rel_base)
-    top_norm = _normalize(top_base)
-    rep_norm = _normalize(rep_base)
-    cov_norm = _normalize(cov_base)
+    rel_norm = _normalize_with_bounds(rel_base, score_context.get("rel_min"), score_context.get("rel_max"))
+    top_norm = _normalize_with_bounds(top_base, score_context.get("top_min"), score_context.get("top_max"))
+    rep_norm = _normalize_with_bounds(rep_base, score_context.get("rep_min"), score_context.get("rep_max"))
+    cov_norm = _normalize_with_bounds(cov_base, score_context.get("cov_min"), score_context.get("cov_max"))
 
     rel_threshold = _top_percent_threshold(rel_norm, 0.2)
     top_threshold = _top_percent_threshold(top_norm, 0.3)
@@ -113,6 +125,8 @@ def build_explanations(user_id, ranked_items, context):
         if rel_norm[idx] >= rel_threshold:
             reason_tags.append("relevant_to_you")
         if has_top and top_norm[idx] >= top_threshold:
+            reason_tags.append("underexplored_interest")
+        if not has_top and item.get("news_id") in preferred_ids:
             reason_tags.append("underexplored_interest")
         if cov_norm[idx] > 0:
             reason_tags.append("adds_topic_variety")
@@ -141,8 +155,11 @@ def build_explanations(user_id, ranked_items, context):
         }
 
         updated = dict(item)
-        if updated.get("news_id") in preferred_ids:
+        is_preferred = updated.get("news_id") in preferred_ids
+        if is_preferred:
             updated["is_preferred"] = True
+            if preferred_counts.get(top_path, 0) < 5:
+                updated["is_new_interest"] = True
         updated["explanation"] = explanation
         explained.append(updated)
 

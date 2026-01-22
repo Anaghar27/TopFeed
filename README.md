@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 6 + frontend explainability and preferences UI. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 9 + frontend explainability, preferences, and analytics UI. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 6 + fronten
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX):
+Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX + Step 9):
 
 ```
 MIND-large zips
@@ -53,6 +53,9 @@ ToP-guided diversified feed (hybrid candidate pool + greedy re-ranker)
   |
   v
 Explainability + Preferences UI (Why this, hearts, preferred list)
+  |
+  v
+Event logging + daily metrics (Postgres analytics)
 ```
 
 ---
@@ -392,6 +395,53 @@ curl http://localhost:8000/users/<USER_ID>/preferred?limit=100
 - **Preferences tab**: shows preferred items in a separate view.
 - **Why this?** drawer: shows reason tags + score breakdown + evidence.
 - **Theme toggle**: switches light/dark mode.
+- **Load time badge**: shows feed fetch latency.
+
+---
+
+# Step 9: Event Logging + Analytics (Postgres)
+
+Step 9 logs UI events into Postgres and computes daily metrics for dashboards.
+
+### 1) Create events + metrics tables
+```
+cat ml/scripts/sql/events_and_metrics.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+```
+
+### 2) Post events (single + batch)
+```
+curl -X POST http://localhost:8000/events \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"U483745","event_type":"impression","news_id":"N123","request_id":"req1","model_version":"top_div:v1","method":"personalized_top_diversified","position":1,"explore_level":0.6,"diversify":true}'
+
+curl -X POST http://localhost:8000/events \
+  -H "Content-Type: application/json" \
+  -d '[{"user_id":"U483745","event_type":"click","news_id":"N123","request_id":"req1","model_version":"top_div:v1","method":"personalized_top_diversified","position":1},{"user_id":"U483745","event_type":"dwell","news_id":"N123","request_id":"req1","model_version":"top_div:v1","method":"personalized_top_diversified","dwell_ms":4200}]'
+```
+
+### 3) Compute daily metrics
+```
+docker compose exec backend python /app/ml/scripts/compute_daily_metrics.py --days 14
+```
+
+### 4) Verify metrics in SQL
+```
+SELECT event_type, COUNT(*) FROM events GROUP BY event_type;
+
+SELECT day, model_version, method, impressions, clicks, ctr
+FROM daily_feed_metrics
+ORDER BY day DESC
+LIMIT 20;
+```
+
+### 5) Metrics API
+```
+curl "http://localhost:8000/metrics/summary?days=14"
+curl "http://localhost:8000/metrics/summary?days=14&user_id=U483745"
+```
+
+### 6) UI metrics (per user)
+- The feed UI shows impressions, clicks, CTR, and avg dwell for the current user over the last 14 days.
 
 ## Notes
 

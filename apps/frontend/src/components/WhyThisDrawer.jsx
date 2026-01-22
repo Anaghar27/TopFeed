@@ -7,12 +7,15 @@ const tagStyles = {
 };
 
 function ProgressRow({ label, value }) {
-  const width = Math.round((value || 0) * 100);
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const width = Math.round(safeValue * 100);
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-[color:var(--muted)]">
         <span>{label}</span>
-        <span>{width}%</span>
+        <span>
+          {safeValue.toFixed(4)} ({width}%)
+        </span>
       </div>
       <div className="h-2 w-full rounded-full bg-[color:var(--panel-border)]">
         <div
