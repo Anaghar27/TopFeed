@@ -54,5 +54,14 @@ services:
     command: >
       sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:

@@ -1,12 +1,14 @@
 import os
 import subprocess
 import sys
+import time
 import uuid
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_psycopg_conn
+from app.observability.metrics import observe_feed_response
 from app.schemas.feed import ExplainRequest, ExplainResponse, FeedRequest, FeedResponse, PreferredResponse
 from app.services.explain import (
     build_explanations,
@@ -24,6 +26,7 @@ from app.services.retrieval_pgvector import (
     retrieve_underexplored,
     retrieve_popular,
 )
+from app.services.rollout import assign_variant, load_rollout_config, model_version_for_variant
 
 router = APIRouter()
 
@@ -93,6 +96,7 @@ def get_str_env(name: str, default: str) -> str:
 
 
 def _handle_feed(request: FeedRequest, include_explanations: bool = True):
+    start = time.perf_counter()
     request_id = uuid.uuid4().hex
     top_n = request.top_n or get_int_env("RETRIEVE_TOP_N", 200)
     candidate_pool_n = max(top_n, get_int_env("CANDIDATE_POOL_N", 200))
@@ -104,6 +108,10 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
 
     conn = get_psycopg_conn()
     try:
+        rollout_config = load_rollout_config(conn)
+        variant = assign_variant(
+            user_id=request.user_id, request_id=request_id, config=rollout_config
+        )
         preferred_ids = load_user_preferred_ids(conn, request.user_id)
         preferred_counts = load_preferred_category_counts(conn, request.user_id)
         top_stats = None
@@ -140,13 +148,23 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                         path = f"{category}/{subcategory}" if subcategory else category
                         if preferred_counts.get(path, 0) < 5:
                             item["is_new_interest"] = True
-            return FeedResponse(
+            response = FeedResponse(
                 user_id=request.user_id,
                 items=items,
                 method=method,
                 request_id=request_id,
                 model_version=model_version,
+                variant=variant,
             )
+            observe_feed_response(
+                variant=variant,
+                method=method,
+                latency_seconds=time.perf_counter() - start,
+                items=[item if isinstance(item, dict) else item.model_dump() for item in items],
+                diversify_enabled=bool(request.diversify),
+                explore_level=float(request.explore_level or 0.0),
+            )
+            return response
 
         exclude_ids = get_recent_seen_news_ids(conn, request.user_id, exclude_recent_m)
 
@@ -193,10 +211,10 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                 top_n,
             )
             method = "personalized_top_diversified"
-            model_version = get_str_env("TOP_DIV_MODEL_VERSION", "top_div:v1")
+            model_version = model_version_for_variant(variant, rollout_config)
         else:
             method = "rerank_only"
-            model_version = get_str_env("RERANKER_MODEL_VERSION", "reranker_baseline:v1")
+            model_version = model_version_for_variant(variant, rollout_config)
 
         if include_explanations:
             top_stats = load_top_node_stats(conn, request.user_id)
@@ -237,14 +255,24 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                     and top_norm[idx] > 0
                 )
 
-        return FeedResponse(
+        response = FeedResponse(
             user_id=request.user_id,
             items=items[:top_n],
             method=method,
             diversification=metrics,
             request_id=request_id,
             model_version=model_version,
+            variant=variant,
         )
+        observe_feed_response(
+            variant=variant,
+            method=method,
+            latency_seconds=time.perf_counter() - start,
+            items=[item if isinstance(item, dict) else item.model_dump() for item in items[:top_n]],
+            diversify_enabled=bool(request.diversify),
+            explore_level=float(request.explore_level or 0.0),
+        )
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     finally:

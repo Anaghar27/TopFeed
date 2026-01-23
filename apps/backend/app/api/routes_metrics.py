@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.db import get_psycopg_conn
 
 router = APIRouter()
+
+
+@router.get("/metrics")
+def prometheus_metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics/summary")

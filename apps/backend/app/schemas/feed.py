@@ -60,6 +60,7 @@ class FeedResponse(BaseModel):
     diversification: dict | None = None
     request_id: str | None = None
     model_version: str | None = None
+    variant: Literal["control", "canary"] | None = None
 
 
 class PreferredItem(BaseModel):
