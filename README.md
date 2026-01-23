@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 9 + frontend explainability, preferences, and analytics UI. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 10 + frontend explainability, preferences, and analytics UI. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 9 + fronten
 - Frontend: React + Vite + Tailwind.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX + Step 9):
+Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX + Step 9 + Step 10):
 
 ```
 MIND-large zips
@@ -109,6 +109,14 @@ W_REP_BASE=0.6
 W_COV_BASE=0.4
 MAX_SUBCAT_PER_FEED=3
 MAX_CAT_PER_FEED=8
+
+CANARY_ENABLED=false
+CANARY_PERCENT=5
+CONTROL_MODEL_VERSION=reranker_baseline:v1
+CANARY_MODEL_VERSION=reranker_baseline:v2
+CANARY_AUTO_DISABLE=false
+CTR_DROP_THRESHOLD=0.1
+NOVELTY_SPIKE_THRESHOLD=0.1
 ```
 
 ---
@@ -442,6 +450,54 @@ curl "http://localhost:8000/metrics/summary?days=14&user_id=U483745"
 
 ### 6) UI metrics (per user)
 - The feed UI shows impressions, clicks, CTR, and avg dwell for the current user over the last 14 days.
+
+---
+
+# Step 10: Observability + Safe Rollout
+
+Step 10 adds Prometheus metrics, deterministic canary routing, and a rollout guard check.
+
+### 1) Create rollout config table (one-time)
+```
+cat ml/scripts/sql/step10_rollout_config.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+```
+
+### 2) Prometheus metrics endpoint
+```
+curl http://localhost:8000/metrics | head
+```
+
+### 3) Feed response includes variant + model_version
+```
+curl -sS -X POST http://localhost:8000/feed \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"U483745","top_n":10,"history_k":50,"diversify":true,"explore_level":1.0,"include_explanations":false}' | head
+```
+
+### 4) Enable canary and set traffic split
+```
+docker compose exec -T backend psql -h postgres -U topfeed -d topfeed \
+  -c "update rollout_config set value='true' where key='CANARY_ENABLED';"
+
+docker compose exec -T backend psql -h postgres -U topfeed -d topfeed \
+  -c "update rollout_config set value='50' where key='CANARY_PERCENT';"
+```
+
+### 5) Verify mixed variants
+```
+for u in U1 U2 U3 U4 U5 U6 U7 U8 U9 U10; do
+  curl -sS -X POST http://localhost:8000/feed -H "Content-Type: application/json" \
+    -d "{\"user_id\":\"$u\",\"top_n\":10,\"history_k\":50,\"diversify\":true,\"explore_level\":1.0,\"include_explanations\":false}" \
+    | python -c "import sys,json;print(json.load(sys.stdin)['variant'])"
+done
+```
+
+### 6) Rollout guard check
+```
+curl -sS -X POST http://localhost:8000/rollout/check \
+  -H "Content-Type: application/json" \
+  -d '{"window_minutes":60}' | head
+```
 
 ## Notes
 
