@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 10 + frontend explainability, preferences, and analytics UI. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 10 + frontend explainability, preferences, analytics UI, and rollout observability. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -13,9 +13,9 @@ This README covers setup and the current implementation through Step 10 + fronte
 - Embeddings: pgvector extension in Postgres.
 - Backend: FastAPI + Uvicorn.
 - Frontend: React + Vite + Tailwind.
+- Observability: Prometheus scraping `/metrics`.
 - Orchestration: Docker Compose.
 
-Flow (Step 1 + Step 2 + Step 3 + Step 4 + Step 5 + Step 6 + Frontend UX + Step 9 + Step 10):
 
 ```
 MIND-large zips
@@ -56,19 +56,25 @@ Explainability + Preferences UI (Why this, hearts, preferred list)
   |
   v
 Event logging + daily metrics (Postgres analytics)
+  |
+  v
+Observability + safe rollout (Prometheus + canary routing)
 ```
 
 ---
 
-## Repository Structure (Current)
+## Repository Structure
 
 ```
 apps/
   backend/        # FastAPI + Alembic
     app/api/      # API routes (retrieval service)
+    app/observability/ # Prometheus metrics
+    app/middleware/    # Prometheus middleware
     app/services/ # Retrieval + reranker + ToP logic
   frontend/       # React + Vite + Tailwind
 infra/
+  prometheus.yml  # Prometheus scrape config
 ml/
   data/
     raw/mind/large/
