@@ -2,7 +2,7 @@
 
 ToPFeed is a monorepo that ingests the MIND-large dataset into Postgres, builds item embeddings using pgvector, and serves a FastAPI backend with a React frontend.
 
-This README covers setup and the current implementation through Step 10 + frontend explainability, preferences, analytics UI, and rollout observability. It will be updated as new stages are completed and pushed to GitHub.
+This README covers setup and the current implementation through Step 11 + frontend explainability, preferences, analytics UI, rollout observability, and fresh content ingestion. It will be updated as new stages are completed and pushed to GitHub.
 
 ---
 
@@ -14,6 +14,7 @@ This README covers setup and the current implementation through Step 10 + fronte
 - Backend: FastAPI + Uvicorn.
 - Frontend: React + Vite + Tailwind.
 - Observability: Prometheus scraping `/metrics`.
+- Fresh ingestion: RSS -> Postgres -> embeddings -> feed blending.
 - Orchestration: Docker Compose.
 
 
@@ -59,6 +60,9 @@ Event logging + daily metrics (Postgres analytics)
   |
   v
 Observability + safe rollout (Prometheus + canary routing)
+  |
+  v
+Fresh-first feed + hourly ToP updates (RSS + incremental updates)
 ```
 
 ---
@@ -76,6 +80,7 @@ apps/
 infra/
   prometheus.yml  # Prometheus scrape config
 ml/
+  config/         # RSS source config
   data/
     raw/mind/large/
       zips/       # MIND-large zip files (manual download)
@@ -123,6 +128,17 @@ CANARY_MODEL_VERSION=reranker_baseline:v2
 CANARY_AUTO_DISABLE=false
 CTR_DROP_THRESHOLD=0.1
 NOVELTY_SPIKE_THRESHOLD=0.1
+
+FRESH_HOURS=168
+FRESH_POOL_N=200
+FRESH_MIN_ITEMS=20
+FRESH_RATIO=1.0
+FRESH_REL_WEIGHT=0.7
+FRESH_FRESHNESS_WEIGHT=0.3
+FRESH_TOP_WEIGHT=0.2
+
+LIVE_EXCLUDE_HOURS=6
+LIVE_EXCLUDE_LIMIT=500
 ```
 
 ---
@@ -504,6 +520,62 @@ curl -sS -X POST http://localhost:8000/rollout/check \
   -H "Content-Type: application/json" \
   -d '{"window_minutes":60}' | head
 ```
+
+---
+
+# Step 11: Fresh News Ingestion + Fast ToP Updates
+
+Step 11 ingests fresh RSS items into `items`, embeds them, and serves a fresh-first feed mode with incremental ToP updates and quality metrics.
+
+### 1) Add schema for fresh items + watermark
+```
+cat ml/scripts/sql/schema_fresh.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+cat ml/scripts/sql/top_incremental.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+```
+
+### 2) Fetch RSS and ingest fresh items
+```
+docker compose exec backend python /app/ml/scripts/fetch_fresh_rss.py --hours 168
+docker compose exec backend python /app/ml/scripts/ingest_fresh_to_postgres.py --input /tmp/fresh_items.json
+```
+
+### 3) Verify fresh items in Postgres
+```
+SELECT COUNT(*) FROM items WHERE content_type='fresh';
+SELECT MAX(published_at) FROM items WHERE content_type='fresh';
+SELECT news_id, title, category, subcategory, url
+FROM items
+WHERE content_type='fresh'
+ORDER BY published_at DESC
+LIMIT 5;
+```
+
+### 4) Fresh-first feed mode
+```
+curl -sS -X POST http://localhost:8000/feed \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"U483745","top_n":20,"history_k":50,"diversify":true,"explore_level":1.0,"feed_mode":"fresh_first","fresh_hours":168,"fresh_ratio":1.0}'
+```
+
+Confirm:
+- items include `news_id`, `title`, `abstract`, `url`, `category`, `subcategory`
+- fresh items include `published_at` and `source`
+- explanations include `fresh_content` when within the freshness window
+
+### 5) Incremental ToP updates
+```
+docker compose exec backend python /app/ml/scripts/update_top_incremental.py --hours 1
+```
+
+### 6) Fresh ingest quality metrics
+```
+curl -sS http://localhost:8000/fresh/quality | head
+```
+
+### 7) Cron ingestion (every 10 minutes)
+The `cron` service in `docker-compose.yml` runs:
+- `fetch_fresh_rss.py` + `ingest_fresh_to_postgres.py` every 10 minutes
+- `update_top_incremental.py` hourly
 
 ## Notes
 

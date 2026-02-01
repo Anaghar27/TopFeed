@@ -33,6 +33,11 @@ export default function WhyThisDrawer({ item, open, onClose }) {
   const explanation = item.explanation;
   const evidence = explanation?.evidence || {};
   const breakdown = explanation?.score_breakdown || {};
+  const displayScore = Number.isFinite(item.score)
+    ? item.score
+    : Number.isFinite(breakdown.total_score)
+      ? breakdown.total_score
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -65,6 +70,11 @@ export default function WhyThisDrawer({ item, open, onClose }) {
                 {tag.replaceAll("_", " ")}
               </span>
             ))}
+          </div>
+        )}
+        {displayScore !== null && (
+          <div className="mt-4 text-xs text-[color:var(--muted)]">
+            score: {displayScore.toFixed(4)}
           </div>
         )}
 

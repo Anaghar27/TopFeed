@@ -1,0 +1,19 @@
+{
+  "sources": [
+    {
+      "name": "bbc",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "source_tag": "rss:bbc"
+    },
+    {
+      "name": "reuters",
+      "url": "https://feeds.reuters.com/reuters/topNews",
+      "source_tag": "rss:reuters"
+    },
+    {
+      "name": "ap",
+      "url": "https://apnews.com/apf-topnews?output=rss",
+      "source_tag": "rss:ap"
+    }
+  ]
+}

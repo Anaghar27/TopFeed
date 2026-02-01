@@ -11,6 +11,11 @@ class FeedRequest(BaseModel):
     explore_level: float = Field(default=0.3, ge=0.0, le=1.0)
     diversify: bool = True
     include_explanations: bool = True
+    feed_mode: Literal["historical", "fresh_first"] = "historical"
+    fresh_hours: int | None = Field(default=None, ge=1, le=168)
+    fresh_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    fresh_pool_n: int | None = Field(default=None, ge=1, le=2000)
+    fresh_min_items: int | None = Field(default=None, ge=0, le=1000)
 
 
 class ScoreBreakdown(BaseModel):
@@ -41,6 +46,9 @@ class FeedItem(BaseModel):
     category: str | None
     subcategory: str | None
     url: str | None
+    published_at: str | None = None
+    source: str | None = None
+    content_type: str | None = None
     score: float
     rel_score: float | None = None
     top_bonus: float | None = None

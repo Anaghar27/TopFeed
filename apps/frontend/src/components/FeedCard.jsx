@@ -3,7 +3,6 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
   const isUnderexplored =
     Boolean(item.is_new_interest) ||
     (isPreference && item.explanation?.reason_tags?.includes("underexplored_interest"));
-  const showScore = Number.isFinite(item.score);
 
   return (
     <div className="rounded-2xl border border-[color:var(--card-border)] bg-[color:var(--card-bg)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.15)] transition hover:shadow-[0_18px_60px_rgba(0,0,0,0.25)]">
@@ -16,8 +15,12 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-[color:var(--text)]">{item.title || "Untitled"}</h3>
             {isUnderexplored && (
-              <span className="rounded-full bg-[color:var(--new-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--new-text)]">
+              <span className="inline-flex items-center gap-2 rounded-full bg-[color:var(--new-bg)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--new-text)]">
                 new interest
+                <span className="normal-case tracking-normal text-[10px] text-[color:var(--new-text)]/80">
+                  {item.category || "uncategorized"}
+                  {item.subcategory ? `/${item.subcategory}` : ""}
+                </span>
               </span>
             )}
           </div>
@@ -58,11 +61,6 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-[color:var(--muted)]">
-        {showScore && (
-          <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-            score {item.score}
-          </span>
-        )}
         <button
           className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)] hover:brightness-105"
           onClick={() => onPreview(item)}

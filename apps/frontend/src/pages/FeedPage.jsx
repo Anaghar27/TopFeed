@@ -61,7 +61,10 @@ export default function FeedPage() {
       history_k: 50,
       diversify: true,
       explore_level: exploreLevel,
-      include_explanations: false
+      include_explanations: false,
+      feed_mode: "fresh_first",
+      fresh_hours: 168,
+      fresh_ratio: 1.0
     }),
     [resolvedUserId, exploreLevel]
   );

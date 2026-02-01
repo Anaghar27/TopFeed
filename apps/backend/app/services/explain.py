@@ -99,6 +99,8 @@ def build_explanations(user_id, ranked_items, context):
     preferred_ids = context.get("preferred_ids", set())
     preferred_counts = context.get("preferred_category_counts", {})
     score_context = context.get("score_context") or {}
+    fresh_hours = context.get("fresh_hours")
+    now = context.get("now")
 
     rel_base = [float(item.get("rel_score", item.get("score", 0.0))) for item in ranked_items]
     top_base = [float(item.get("top_bonus", 0.0)) for item in ranked_items]
@@ -134,11 +136,27 @@ def build_explanations(user_id, ranked_items, context):
             reason_tags.append("reduces_repetition")
         if method == "popular_fallback":
             reason_tags.append("popular_fallback")
+        published_at = item.get("published_at")
+        if fresh_hours and now and published_at:
+            try:
+                from datetime import datetime
+
+                published_dt = datetime.fromisoformat(published_at)
+                age_hours = (now - published_dt).total_seconds() / 3600.0
+                if age_hours <= float(fresh_hours):
+                    reason_tags.append("fresh_content")
+            except Exception:
+                pass
 
         evidence = {
             "recent_clicks_used": recent_clicks,
             "top_node_stats": top_node_stats.get(top_path),
         }
+        if published_at or item.get("source"):
+            evidence["freshness"] = {
+                "published_at": published_at,
+                "source": item.get("source"),
+            }
 
         explanation = {
             "top_path": top_path,

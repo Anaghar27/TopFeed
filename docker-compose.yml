@@ -63,5 +63,29 @@ services:
     depends_on:
       - backend
 
+  cron:
+    build:
+      context: ./apps/backend
+    volumes:
+      - ./ml:/app/ml
+    depends_on:
+      - backend
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      EMB_MODEL_NAME: ${EMB_MODEL_NAME}
+      EMB_BATCH_SIZE: ${EMB_BATCH_SIZE}
+      EMB_FETCH_BATCH: ${EMB_FETCH_BATCH}
+    command: >
+      sh -c "apt-get update && apt-get install -y --no-install-recommends cron && rm -rf /var/lib/apt/lists/* &&
+      echo '*/10 * * * * python /app/ml/scripts/fetch_fresh_rss.py --hours 168 && python /app/ml/scripts/ingest_fresh_to_postgres.py --input /tmp/fresh_items.json' > /etc/cron.d/topfeed &&
+      echo '5 * * * * python /app/ml/scripts/update_top_incremental.py --hours 1' >> /etc/cron.d/topfeed &&
+      chmod 0644 /etc/cron.d/topfeed &&
+      crontab /etc/cron.d/topfeed &&
+      cron -f -L 15"
+
 volumes:
   postgres_data:
