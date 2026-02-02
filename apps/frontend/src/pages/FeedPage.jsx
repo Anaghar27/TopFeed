@@ -4,12 +4,11 @@ import WhyThisDrawer from "../components/WhyThisDrawer";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
-export default function FeedPage() {
-  const [userId, setUserId] = useState(
-    () => localStorage.getItem("topfeed-user-id") || "U483745"
-  );
+export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogout }) {
+  const [userId] = useState(() => user?.user_id || "U483745");
+  const profileImageUrl = user?.profile_image_url || "";
+  const profileInitials = (user?.full_name || "U").trim().slice(0, 2).toUpperCase() || "U";
   const [exploreLevel, setExploreLevel] = useState(0.6);
-  const [theme, setTheme] = useState(() => localStorage.getItem("topfeed-theme") || "light");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("idle");
@@ -23,8 +22,6 @@ export default function FeedPage() {
   const [requestId, setRequestId] = useState(null);
   const [modelVersion, setModelVersion] = useState(null);
   const [feedMethod, setFeedMethod] = useState(null);
-  const [userMetrics, setUserMetrics] = useState(null);
-  const [metricsLoading, setMetricsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const lastLoggedRequest = useRef(null);
@@ -52,7 +49,22 @@ export default function FeedPage() {
     return counts;
   }, [preferredItems]);
 
-  const resolvedUserId = userId.trim() || "U483745";
+  const resolvedUserId = (user?.user_id || userId).trim() || "U483745";
+  const activeUserId = resolvedUserId;
+  const greetingName = (user?.full_name || "there").trim().split(" ")[0] || "there";
+  const greetingText = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return `Good morning, ${greetingName}`;
+    }
+    if (hour >= 12 && hour < 17) {
+      return `Good afternoon, ${greetingName}`;
+    }
+    if (hour >= 17 && hour < 22) {
+      return `Good evening, ${greetingName}`;
+    }
+    return `Good night, ${greetingName}`;
+  }, [greetingName]);
 
   const payload = useMemo(
     () => ({
@@ -70,16 +82,8 @@ export default function FeedPage() {
   );
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("topfeed-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    const trimmed = userId.trim();
-    if (trimmed) {
-      localStorage.setItem("topfeed-user-id", trimmed);
-    }
-  }, [userId]);
+    setExploreLevel(0.6);
+  }, [resolvedUserId]);
 
   useEffect(() => {
     let alive = true;
@@ -125,40 +129,6 @@ export default function FeedPage() {
     };
   }, [payload]);
 
-  useEffect(() => {
-    let alive = true;
-
-    async function fetchMetrics() {
-      setMetricsLoading(true);
-      try {
-        const response = await fetch(
-          `${API_BASE}/metrics/summary?days=14&user_id=${encodeURIComponent(resolvedUserId)}`
-        );
-        if (!response.ok) {
-          throw new Error(`status ${response.status}`);
-        }
-        const data = await response.json();
-        if (alive) {
-          setUserMetrics(data);
-        }
-      } catch (error) {
-        if (alive) {
-          setUserMetrics(null);
-        }
-      } finally {
-        if (alive) {
-          setMetricsLoading(false);
-        }
-      }
-    }
-
-    if (activeView === "feed") {
-      fetchMetrics();
-    }
-    return () => {
-      alive = false;
-    };
-  }, [resolvedUserId, activeView]);
 
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const pagedItems = items.slice((page - 1) * pageSize, page * pageSize);
@@ -169,7 +139,7 @@ export default function FeedPage() {
     async function fetchPreferred() {
       setPreferredLoading(true);
       try {
-        const response = await fetch(`${API_BASE}/users/${userId}/preferred?limit=100`);
+      const response = await fetch(`${API_BASE}/users/${activeUserId}/preferred?limit=100`);
         if (!response.ok) {
           throw new Error(`status ${response.status}`);
         }
@@ -194,7 +164,7 @@ export default function FeedPage() {
     return () => {
       alive = false;
     };
-  }, [userId, activeView]);
+  }, [activeUserId, activeView]);
 
   async function postEvents(events) {
     if (!events.length) return;
@@ -215,7 +185,7 @@ export default function FeedPage() {
     if (lastLoggedRequest.current === requestId) return;
     lastLoggedRequest.current = requestId;
     const events = items.map((item, index) => ({
-      user_id: userId,
+      user_id: activeUserId,
       event_type: "impression",
       news_id: item.news_id,
       request_id: requestId,
@@ -226,7 +196,7 @@ export default function FeedPage() {
       diversify: true
     }));
     postEvents(events);
-  }, [activeView, items, requestId, modelVersion, feedMethod, exploreLevel, userId]);
+  }, [activeView, items, requestId, modelVersion, feedMethod, exploreLevel, activeUserId]);
 
   async function handleWhy(item) {
     if (item.explanation) {
@@ -279,7 +249,7 @@ export default function FeedPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: userId,
+          user_id: activeUserId,
           item,
           method: status === "personalized_top_diversified" ? status : status === "popular_fallback" ? status : "rerank_only",
           score_context: scoreContext
@@ -350,7 +320,7 @@ export default function FeedPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: userId,
+          user_id: activeUserId,
           news_id: item.news_id,
           action,
           split: "live"
@@ -362,7 +332,7 @@ export default function FeedPage() {
       if (requestId) {
         postEvents([
           {
-            user_id: userId,
+            user_id: activeUserId,
             event_type: action === "prefer" ? "save" : "hide",
             news_id: item.news_id,
             request_id: requestId,
@@ -386,7 +356,7 @@ export default function FeedPage() {
     if (!requestId) return;
     postEvents([
       {
-        user_id: userId,
+        user_id: activeUserId,
         event_type: "click",
         news_id: item.news_id,
         request_id: requestId,
@@ -406,7 +376,7 @@ export default function FeedPage() {
     if (requestId) {
       postEvents([
         {
-          user_id: userId,
+          user_id: activeUserId,
           event_type: "click",
           news_id: item.news_id,
           request_id: requestId,
@@ -426,7 +396,7 @@ export default function FeedPage() {
       const dwellMs = Math.max(Date.now() - previewStart.current, 0);
       postEvents([
         {
-          user_id: userId,
+      user_id: activeUserId,
           event_type: "dwell",
           news_id: previewItem.news_id,
           request_id: requestId,
@@ -452,18 +422,14 @@ export default function FeedPage() {
       }}
     >
       <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-[color:var(--panel-border)] bg-[color:var(--panel-bg)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.15)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--accent)]">ToPFeed</p>
+            <p className="mt-2 text-sm font-semibold text-[color:var(--muted)]">{greetingText}</p>
             <h1 className="mt-2 text-3xl font-semibold text-[color:var(--text)]">
               {activeView === "feed" ? "Personalized feed" : "Preferred list"}
             </h1>
-            {activeView === "feed" && loadMs !== null && (
-              <p className="mt-2 text-xs font-semibold text-[color:var(--muted)]">
-                load time: {loadMs} ms
-              </p>
-            )}
-            <div className="mt-3 flex gap-2 text-xs font-semibold">
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
               <button
                 className={
                   activeView === "feed"
@@ -486,86 +452,29 @@ export default function FeedPage() {
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-3 shadow-sm">
-            <label className="text-xs font-semibold text-[color:var(--muted)]">
-              User
-              <input
-                className="mt-1 w-40 rounded-lg border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-2 py-1 text-sm text-[color:var(--text)] focus:border-[color:var(--accent-strong)] focus:outline-none"
-                value={userId}
-                onChange={(event) => setUserId(event.target.value)}
-              />
-            </label>
-            {activeView === "feed" && (
-              <div className="text-xs font-semibold text-[color:var(--muted)]">
-                <div className="flex items-center justify-between">
-                  <span>Explore vs relevance</span>
-                  <span className="text-[color:var(--accent)]">{exploreLevel.toFixed(1)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={exploreLevel}
-                  onChange={(event) => setExploreLevel(Number(event.target.value))}
-                  className="mt-2 w-40 accent-[color:var(--accent-strong)]"
-                />
-                <div className="mt-1 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--muted)]">
-                  <span>Focus</span>
-                  <span>Explore</span>
-                </div>
-              </div>
-            )}
-            {activeView === "feed" && (
-              <span className="text-xs font-semibold text-[color:var(--muted)]">
-                {exploreLevel < 0.4 ? "relevance-first" : exploreLevel < 0.7 ? "balanced" : "exploration-heavy"}
-              </span>
-            )}
+          <div className="ml-auto flex items-center gap-2">
             <button
-              className="relative flex h-7 w-16 items-center rounded-full border border-[color:var(--panel-border)] bg-[color:var(--chip-bg)] px-1 text-xs font-semibold text-[color:var(--muted)]"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              aria-label="Toggle theme"
+              className="flex items-center gap-2 rounded-full border border-[color:var(--panel-border)] px-3 py-1 text-xs font-semibold text-[color:var(--muted)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
+              onClick={onProfile}
             >
-              <span className="absolute left-2 text-[11px]">☀</span>
-              <span className="absolute right-2 text-[11px]">☾</span>
-              <span
-                className={`h-5 w-5 rounded-full bg-[color:var(--accent-strong)] shadow transition-transform ${
-                  theme === "dark" ? "translate-x-9" : "translate-x-0"
-                }`}
-              />
+              <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-[color:var(--panel-border)] bg-[color:var(--bg)] text-[10px] font-semibold text-[color:var(--muted)]">
+                {profileImageUrl ? (
+                  <img src={profileImageUrl} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  profileInitials
+                )}
+              </span>
+              Profile
+            </button>
+            <button
+              className="rounded-full border border-[color:var(--panel-border)] px-3 py-1 text-xs font-semibold text-[color:var(--muted)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
+              onClick={onLogout}
+            >
+              Logout
             </button>
           </div>
         </div>
 
-        {activeView === "feed" && (
-          <div className="mt-6 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--card-bg)] px-5 py-4 text-xs text-[color:var(--muted)]">
-            {metricsLoading && <span>Loading your metrics...</span>}
-            {!metricsLoading && userMetrics?.totals && (
-              <div className="flex flex-wrap items-center gap-4">
-                <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-                  impressions {userMetrics.totals.impressions}
-                </span>
-                <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-                  clicks {userMetrics.totals.clicks}
-                </span>
-                <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-                  ctr {(userMetrics.totals.ctr || 0).toFixed(3)}
-                </span>
-                {userMetrics.series?.length ? (
-                  <span className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)]">
-                    avg dwell {(userMetrics.series[userMetrics.series.length - 1].avg_dwell_ms || 0).toFixed(0)} ms
-                  </span>
-                ) : null}
-                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--muted)]">
-                  last 14 days
-                </span>
-              </div>
-            )}
-            {!metricsLoading && !userMetrics?.totals && (
-              <span>No user metrics yet. Interact with the feed to generate events.</span>
-            )}
-          </div>
-        )}
 
         {activeView === "feed" && loading && (
           <div className="mt-8 rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-6 text-center text-sm text-[color:var(--muted)]">

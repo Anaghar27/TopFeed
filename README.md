@@ -15,6 +15,7 @@ This README covers setup and the current implementation through Step 11 + fronte
 - Frontend: React + Vite + Tailwind.
 - Observability: Prometheus scraping `/metrics`.
 - Fresh ingestion: RSS -> Postgres -> embeddings -> feed blending.
+- User portal: Postgres-backed user profiles and preferences.
 - Orchestration: Docker Compose.
 
 
@@ -63,6 +64,9 @@ Observability + safe rollout (Prometheus + canary routing)
   |
   v
 Fresh-first feed + hourly ToP updates (RSS + incremental updates)
+  |
+  v
+User portal (signup/login + profile)
 ```
 
 ---
@@ -77,6 +81,7 @@ apps/
     app/middleware/    # Prometheus middleware
     app/services/ # Retrieval + reranker + ToP logic
   frontend/       # React + Vite + Tailwind
+    src/pages/    # Feed + Auth + Profile pages
 infra/
   prometheus.yml  # Prometheus scrape config
 ml/
@@ -576,6 +581,84 @@ curl -sS http://localhost:8000/fresh/quality | head
 The `cron` service in `docker-compose.yml` runs:
 - `fetch_fresh_rss.py` + `ingest_fresh_to_postgres.py` every 10 minutes
 - `update_top_incremental.py` hourly
+
+---
+
+# Step 12: User Portal (Signup, Login, Profile)
+
+Step 12 adds a Postgres-backed user portal with signup/login and a profile page.
+
+### 1) Create users table
+```
+cat ml/scripts/sql/users.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+```
+
+### 2) Signup (new user)
+```
+curl -sS -X POST http://localhost:8000/users/signup \
+  -H "Content-Type: application/json" \
+  -d '{"full_name":"Jane Doe","email":"jane@example.com","password":"S3curePass!","location":"Austin","preferences":{"categories":["news","sports"],"subcategories":["tech","newsworld"]}}'
+```
+
+### 3) Login (existing user)
+```
+curl -sS -X POST http://localhost:8000/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com","password":"S3curePass!"}'
+```
+
+Access code login:
+```
+curl -sS http://localhost:8000/users/U483745
+```
+
+### 4) Update profile
+```
+curl -sS -X PATCH http://localhost:8000/users/U483745 \
+  -H "Content-Type: application/json" \
+  -d '{"theme_preference":"light","preferences":{"categories":["finance"],"subcategories":["financeeconomy"]},"location":"Boston, MA, US","profile_image_url":"data:image/jpeg;base64,..."}'
+```
+
+### 5) Password reset (OTP)
+Request OTP:
+```
+curl -sS -X POST http://localhost:8000/users/password/reset/request \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com"}'
+```
+
+Verify OTP only:
+```
+curl -sS -X POST http://localhost:8000/users/password/reset/otp/verify \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com","otp":"123456"}'
+```
+
+Reset with OTP + new password:
+```
+curl -sS -X POST http://localhost:8000/users/password/reset/verify \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com","otp":"123456","new_password":"N3wS3curePass!"}'
+```
+
+### 6) SMTP settings (OTP email)
+Add to `.env`:
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=topfeed.noreply@gmail.com
+SMTP_PASSWORD=your_app_password
+SMTP_FROM=ToPFeed <topfeed.noreply@gmail.com>
+SMTP_TLS=true
+```
+
+UI behavior:
+- Signup uses email + password and does not ask for theme (default is dark).
+- Login offers Email first, then Access code.
+- Forgot password sends OTP to the user's email; OTP must verify before setting a new password.
+- Profile includes photo upload with cropper, preferences, theme, engagement, and app version.
+- Profile button shows the avatar; user id and load time are hidden.
+- If a user exists without profile details, location defaults to `unknown` until updated.
 
 ## Notes
 

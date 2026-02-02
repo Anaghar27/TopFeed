@@ -10,6 +10,7 @@ from app.api.routes_metrics import router as metrics_router
 from app.api.routes_rollout import router as rollout_router
 from app.api.routes_retrieval import router as retrieval_router
 from app.api.routes_top import router as top_router
+from app.api.routes_users import router as users_router
 from app.db import check_db_connection
 from app.middleware.prometheus_middleware import PrometheusMiddleware
 
@@ -34,6 +35,7 @@ app.include_router(events_router)
 app.include_router(metrics_router)
 app.include_router(rollout_router)
 app.include_router(fresh_router)
+app.include_router(users_router)
 
 
 @app.get("/health")
