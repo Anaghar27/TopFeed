@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 
 import numpy as np
@@ -8,11 +8,25 @@ import numpy as np
 TIME_FORMAT = "%m/%d/%Y %I:%M:%S %p"
 
 
-def parse_time(value: str | None) -> datetime | None:
+def _to_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(tz=timezone.utc).replace(tzinfo=None)
+
+
+def parse_time(value) -> datetime | None:
     if not value:
         return None
+    if isinstance(value, datetime):
+        return _to_naive_utc(value)
     try:
-        return datetime.strptime(value, TIME_FORMAT)
+        return datetime.strptime(str(value), TIME_FORMAT)
+    except ValueError:
+        pass
+    try:
+        text = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        return _to_naive_utc(parsed)
     except ValueError:
         return None
 
@@ -54,6 +68,50 @@ def get_user_click_history(conn, user_id: str, k: int, splits: tuple[str, ...] =
         {"news_id": row[0], "time": row[1], "split": row[2], "impression_id": row[3]}
         for row in rows
     ]
+
+
+def get_user_click_history_events(conn, user_id: str, k: int):
+    sql = """
+        SELECT news_id, ts
+        FROM events
+        WHERE user_id = %s
+          AND event_type = 'click'
+        ORDER BY ts DESC
+        LIMIT %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (user_id, k))
+        rows = cur.fetchall()
+    return [
+        {"news_id": row[0], "time": row[1], "split": "live", "impression_id": None}
+        for row in rows
+    ]
+
+
+def merge_click_histories(primary, secondary, limit: int):
+    combined = []
+    for click in primary:
+        combined.append(("primary", click))
+    for click in secondary:
+        combined.append(("secondary", click))
+
+    def sort_key(entry):
+        _, click = entry
+        ts = parse_time(click.get("time"))
+        return ts or datetime.min
+
+    combined.sort(key=sort_key, reverse=True)
+    deduped = []
+    seen = set()
+    for _, click in combined:
+        news_id = click.get("news_id")
+        if not news_id or news_id in seen:
+            continue
+        seen.add(news_id)
+        deduped.append(click)
+        if len(deduped) >= limit:
+            break
+    return deduped
 
 
 def build_user_vector(conn, clicks, half_life_days: float):

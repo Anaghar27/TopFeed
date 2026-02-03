@@ -20,6 +20,8 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
   const [message, setMessage] = useState("");
   const [loadMs, setLoadMs] = useState(null);
   const [requestId, setRequestId] = useState(null);
+  const [pendingItems, setPendingItems] = useState(null);
+  const [hasNewItems, setHasNewItems] = useState(false);
   const [modelVersion, setModelVersion] = useState(null);
   const [feedMethod, setFeedMethod] = useState(null);
   const [page, setPage] = useState(1);
@@ -69,14 +71,14 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
   const payload = useMemo(
     () => ({
       user_id: resolvedUserId,
-      top_n: 50,
+      top_n: 100,
       history_k: 50,
       diversify: true,
       explore_level: exploreLevel,
       include_explanations: false,
       feed_mode: "fresh_first",
       fresh_hours: 168,
-      fresh_ratio: 1.0
+      fresh_ratio: 0.9
     }),
     [resolvedUserId, exploreLevel]
   );
@@ -128,6 +130,43 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
       alive = false;
     };
   }, [payload]);
+
+  useEffect(() => {
+    if (activeView !== "feed") return;
+    if (!items.length) return;
+
+    let alive = true;
+    const intervalId = setInterval(async () => {
+      if (!alive || loading || hasNewItems) return;
+      try {
+        const response = await fetch(`${API_BASE}/feed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        const nextItems = data.items || [];
+        if (!nextItems.length) return;
+        const currentIds = items.slice(0, 5).map((item) => item.news_id).join("|");
+        const nextIds = nextItems.slice(0, 5).map((item) => item.news_id).join("|");
+        if (currentIds && nextIds && currentIds !== nextIds) {
+          console.info("New feed detected; toast will be shown.");
+          setPendingItems(nextItems);
+          setHasNewItems(true);
+        }
+      } catch (error) {
+        // Ignore background refresh failures.
+      }
+    }, 600_000);
+
+    return () => {
+      alive = false;
+      clearInterval(intervalId);
+    };
+  }, [activeView, items, loading, hasNewItems, payload]);
 
 
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -268,6 +307,14 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
       setMessage("Could not load explanation");
       setTimeout(() => setMessage(""), 2000);
     }
+  }
+
+  function applyPendingFeed() {
+    if (!pendingItems) return;
+    setItems(pendingItems);
+    setPendingItems(null);
+    setHasNewItems(false);
+    setPage(1);
   }
 
   async function handlePrefer(item) {
@@ -480,6 +527,15 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
           <div className="mt-8 rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--card-bg)] p-6 text-center text-sm text-[color:var(--muted)]">
             Building your feed...
           </div>
+        )}
+
+        {activeView === "feed" && hasNewItems && (
+          <button
+            className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-[color:var(--panel-border)] bg-[color:var(--accent-strong)] px-4 py-2 text-xs font-semibold text-[color:var(--text)] shadow-[0_15px_40px_rgba(0,0,0,0.35)]"
+            onClick={applyPendingFeed}
+          >
+            New stories available
+          </button>
         )}
 
         {activeView === "feed" && !loading && (

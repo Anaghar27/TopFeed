@@ -24,6 +24,8 @@ from app.services.retrieval_pgvector import (
     build_user_vector,
     get_recent_seen_news_ids,
     get_user_click_history,
+    get_user_click_history_events,
+    merge_click_histories,
     retrieve_by_vector,
     retrieve_underexplored,
     retrieve_popular,
@@ -214,11 +216,10 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
         preferred_ids = load_user_preferred_ids(conn, request.user_id)
         preferred_counts = load_preferred_category_counts(conn, request.user_id)
         top_stats = None
-        clicks = get_user_click_history(conn, request.user_id, history_k)
-        if clicks:
-            user_vec, _ = build_user_vector(conn, clicks, half_life_days)
-        else:
-            user_vec = None
+        mind_clicks = get_user_click_history(conn, request.user_id, history_k)
+        event_clicks = get_user_click_history_events(conn, request.user_id, history_k)
+        clicks = merge_click_histories(mind_clicks, event_clicks, history_k)
+        user_vec, _ = build_user_vector(conn, clicks, half_life_days) if clicks else (None, [])
 
         recent_event_ids = set(
             _get_recent_event_news_ids(conn, request.user_id, live_exclude_hours, live_exclude_limit)
@@ -229,7 +230,9 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
                 request.fresh_hours if request.fresh_hours is not None else get_int_env("FRESH_HOURS", 168)
             )
             fresh_hours = max(1, min(168, fresh_hours))
-            fresh_ratio = 1.0
+            fresh_ratio = (
+                request.fresh_ratio if request.fresh_ratio is not None else get_float_env("FRESH_RATIO", 1.0)
+            )
             fresh_pool_n = (
                 request.fresh_pool_n if request.fresh_pool_n is not None else get_int_env("FRESH_POOL_N", 200)
             )
@@ -250,7 +253,15 @@ def _handle_feed(request: FeedRequest, include_explanations: bool = True):
             if not fresh_candidates:
                 fresh_candidates = _fetch_fresh_candidates(conn, fresh_hours, fresh_pool_n, False)
             top_nodes = load_user_top_nodes(conn, request.user_id)
-            candidates = fresh_candidates[:top_n]
+            if len(fresh_candidates) < top_n:
+                fallback = [
+                    item
+                    for item in retrieve_popular(conn, top_n * 2)
+                    if item.get("news_id") not in recent_event_ids
+                ]
+                candidates = _blend_candidates(fresh_candidates, fallback, fresh_ratio, top_n)
+            else:
+                candidates = fresh_candidates[:top_n]
 
             if not candidates:
                 response = FeedResponse(
@@ -585,7 +596,9 @@ def explain_item(request: ExplainRequest):
     history_k = get_int_env("USER_HISTORY_K", 50)
     conn = get_psycopg_conn()
     try:
-        clicks = get_user_click_history(conn, request.user_id, history_k)
+        mind_clicks = get_user_click_history(conn, request.user_id, history_k)
+        event_clicks = get_user_click_history_events(conn, request.user_id, history_k)
+        clicks = merge_click_histories(mind_clicks, event_clicks, history_k)
         top_stats = load_top_node_stats(conn, request.user_id)
         recent_clicks = load_recent_clicks(conn, clicks)
         preferred_ids = load_user_preferred_ids(conn, request.user_id)
@@ -659,7 +672,9 @@ def retrieve_debug(user_id: str):
 
     conn = get_psycopg_conn()
     try:
-        clicks = get_user_click_history(conn, user_id, history_k)
+        mind_clicks = get_user_click_history(conn, user_id, history_k)
+        event_clicks = get_user_click_history_events(conn, user_id, history_k)
+        clicks = merge_click_histories(mind_clicks, event_clicks, history_k)
         user_vec, debug = build_user_vector(conn, clicks, half_life_days)
         if user_vec is None:
             return {

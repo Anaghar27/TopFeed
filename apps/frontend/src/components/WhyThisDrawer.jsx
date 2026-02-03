@@ -33,10 +33,10 @@ export default function WhyThisDrawer({ item, open, onClose }) {
   const explanation = item.explanation;
   const evidence = explanation?.evidence || {};
   const breakdown = explanation?.score_breakdown || {};
-  const displayScore = Number.isFinite(item.score)
-    ? item.score
-    : Number.isFinite(breakdown.total_score)
-      ? breakdown.total_score
+  const displayScore = Number.isFinite(breakdown.total_score)
+    ? breakdown.total_score
+    : Number.isFinite(item.score)
+      ? item.score
       : null;
 
   return (
