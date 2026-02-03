@@ -3,6 +3,7 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
   const isUnderexplored =
     Boolean(item.is_new_interest) ||
     (isPreference && item.explanation?.reason_tags?.includes("underexplored_interest"));
+  const hasPublicLink = Boolean(item.url) && item.content_type === "fresh";
 
   return (
     <div className="rounded-2xl border border-[color:var(--card-border)] bg-[color:var(--card-bg)] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.15)] transition hover:shadow-[0_18px_60px_rgba(0,0,0,0.25)]">
@@ -67,7 +68,7 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
         >
           preview
         </button>
-        {item.url && (
+        {hasPublicLink ? (
           <a
             className="rounded-full bg-[color:var(--chip-bg)] px-3 py-1 text-[color:var(--chip-text)] hover:brightness-105"
             href={item.url}
@@ -77,6 +78,13 @@ export default function FeedCard({ item, onWhy, onPreview, onPrefer, onRead }) {
           >
             read full article
           </a>
+        ) : (
+          <span
+            className="cursor-not-allowed rounded-full border border-[color:var(--panel-border)] px-3 py-1 text-[color:var(--muted)]"
+            title="Full article not available for dataset items."
+          >
+            Not available
+          </span>
         )}
       </div>
     </div>

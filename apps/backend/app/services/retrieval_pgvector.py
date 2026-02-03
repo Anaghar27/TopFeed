@@ -190,7 +190,7 @@ def retrieve_by_vector(conn, user_vec: np.ndarray, top_n: int, exclude_news_ids=
 
     if exclude_news_ids:
         sql = """
-            SELECT news_id, title, abstract, category, subcategory, url,
+            SELECT news_id, title, abstract, category, subcategory, url, content_type, source,
                    embedding <=> %s::vector AS score
             FROM items
             WHERE embedding IS NOT NULL
@@ -201,7 +201,7 @@ def retrieve_by_vector(conn, user_vec: np.ndarray, top_n: int, exclude_news_ids=
         params = (vector_str, exclude_news_ids, vector_str, top_n)
     else:
         sql = """
-            SELECT news_id, title, abstract, category, subcategory, url,
+            SELECT news_id, title, abstract, category, subcategory, url, content_type, source,
                    embedding <=> %s::vector AS score
             FROM items
             WHERE embedding IS NOT NULL
@@ -222,7 +222,9 @@ def retrieve_by_vector(conn, user_vec: np.ndarray, top_n: int, exclude_news_ids=
             "category": row[3],
             "subcategory": row[4],
             "url": row[5],
-            "score": float(row[6]),
+            "content_type": row[6],
+            "source": row[7],
+            "score": float(row[8]),
         }
         for row in rows
     ]
@@ -231,12 +233,13 @@ def retrieve_by_vector(conn, user_vec: np.ndarray, top_n: int, exclude_news_ids=
 def retrieve_popular(conn, top_n: int, splits: tuple[str, ...] = ("train", "dev")):
     sql = """
         SELECT i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url,
-               COUNT(*) AS clicks
+               i.content_type, i.source, COUNT(*) AS clicks
         FROM impressions im
         JOIN items i ON i.news_id = im.news_id
         WHERE im.split = ANY(%s)
           AND im.clicked = TRUE
-        GROUP BY i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url
+        GROUP BY i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url,
+                 i.content_type, i.source
         ORDER BY clicks DESC
         LIMIT %s
     """
@@ -252,7 +255,9 @@ def retrieve_popular(conn, top_n: int, splits: tuple[str, ...] = ("train", "dev"
             "category": row[3],
             "subcategory": row[4],
             "url": row[5],
-            "score": float(row[6]),
+            "content_type": row[6],
+            "source": row[7],
+            "score": float(row[8]),
         }
         for row in rows
     ]
@@ -284,6 +289,7 @@ def retrieve_underexplored(conn, user_id: str, top_n: int, exclude_news_ids=None
         ),
         candidates AS (
             SELECT i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url,
+                   i.content_type, i.source,
                    COUNT(im.*) FILTER (WHERE im.clicked) AS clicks,
                    ROW_NUMBER() OVER (
                        PARTITION BY i.category
@@ -298,9 +304,11 @@ def retrieve_underexplored(conn, user_id: str, top_n: int, exclude_news_ids=None
              AND im.clicked = TRUE
             WHERE i.embedding IS NOT NULL
             {exclude_clause}
-            GROUP BY i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url
+            GROUP BY i.news_id, i.title, i.abstract, i.category, i.subcategory, i.url,
+                     i.content_type, i.source
         )
         SELECT news_id, title, abstract, category, subcategory, url,
+               content_type, source,
                COALESCE(clicks, 0) AS score
         FROM candidates
         WHERE rn <= %s
@@ -320,7 +328,9 @@ def retrieve_underexplored(conn, user_id: str, top_n: int, exclude_news_ids=None
             "category": row[3],
             "subcategory": row[4],
             "url": row[5],
-            "score": float(row[6]),
+            "content_type": row[6],
+            "source": row[7],
+            "score": float(row[8]),
         }
         for row in rows
     ]
