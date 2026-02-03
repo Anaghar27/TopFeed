@@ -15,7 +15,7 @@ This README covers setup and the current implementation through Step 11 + fronte
 - Frontend: React + Vite + Tailwind.
 - Observability: Prometheus scraping `/metrics`.
 - Fresh ingestion: RSS -> Postgres -> embeddings -> feed blending.
-- User portal: Postgres-backed user profiles and preferences.
+- User portal: Postgres-backed user profiles and preferences + admin console (OTP + JWT).
 - Orchestration: Docker Compose.
 
 
@@ -66,7 +66,7 @@ Observability + safe rollout (Prometheus + canary routing)
 Fresh-first feed + hourly ToP updates (RSS + incremental updates)
   |
   v
-User portal (signup/login + profile)
+User portal (signup/login + profile) + admin console
 ```
 
 ---
@@ -108,6 +108,30 @@ DB_PASSWORD=topfeed
 DB_NAME=topfeed
 FRONTEND_ORIGIN=http://localhost:5173
 VITE_API_BASE=http://localhost:8000
+ADMIN_EMAILS=admin1@gmail.com,admin2@gmail.com
+ADMIN_JWT_SECRET=change-me
+ADMIN_JWT_TTL_MIN=60
+ADMIN_BOOTSTRAP_KEY=change-me
+
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=admin@example.com
+SMTP_TLS=true
+
+# Admin setup (one-time bootstrap)
+1) Apply admin tables:
+   cat ml/scripts/sql/users.sql | docker compose exec -T postgres psql -U topfeed -d topfeed
+2) Create admin account:
+   curl -X POST http://localhost:8000/admin/bootstrap \
+     -H "Content-Type: application/json" \
+     -H "X-Admin-Bootstrap-Key: <ADMIN_BOOTSTRAP_KEY>" \
+     -d '{"email":"admin@example.com","password":"<admin-password>"}'
+3) Login flow:
+   POST /admin/login/otp/request -> email + password
+   POST /admin/login/verify -> email + password + otp (returns JWT)
+   Use JWT on /admin/users and /admin/events via Authorization: Bearer <token>
 
 RERANK_MAX_ROWS_TRAIN=200000
 RERANK_MAX_ROWS_DEV=50000

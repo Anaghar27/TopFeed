@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { City, Country, State } from "country-state-city";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
@@ -27,37 +28,7 @@ const SUBCATEGORY_OPTIONS = [
   "entertainment-celebrity"
 ];
 
-const COUNTRY_OPTIONS = [
-  "Australia",
-  "Canada",
-  "India",
-  "United Kingdom",
-  "United States",
-  "Other"
-];
-
-const COUNTRY_TO_STATES = {
-  Australia: ["New South Wales", "Other"],
-  Canada: ["Ontario", "Other"],
-  India: ["Karnataka", "Other"],
-  "United Kingdom": ["Other"],
-  "United States": ["California", "Massachusetts", "New York", "Texas", "Washington", "Other"],
-  Other: ["Other"]
-};
-
-const STATE_TO_CITIES = {
-  California: ["San Francisco", "Other"],
-  Karnataka: ["Bengaluru", "Other"],
-  Massachusetts: ["Other"],
-  "New South Wales": ["Sydney", "Other"],
-  "New York": ["New York", "Other"],
-  Ontario: ["Toronto", "Other"],
-  Texas: ["Austin", "Other"],
-  Washington: ["Seattle", "Other"],
-  Other: ["Other"]
-};
-
-export default function AuthPage({ onAuth }) {
+export default function AuthPage({ onAuth, onAdmin }) {
   const [mode, setMode] = useState("login");
   const [loginMode, setLoginMode] = useState("email");
   const [resetStep, setResetStep] = useState("request");
@@ -66,15 +37,16 @@ export default function AuthPage({ onAuth }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [country, setCountry] = useState("");
-  const [customCountry, setCustomCountry] = useState("");
+  const [manualCountry, setManualCountry] = useState("");
   const [stateRegion, setStateRegion] = useState("");
-  const [customStateRegion, setCustomStateRegion] = useState("");
+  const [manualState, setManualState] = useState("");
   const [city, setCity] = useState("");
-  const [customCity, setCustomCity] = useState("");
+  const [manualCity, setManualCity] = useState("");
   const [theme] = useState("dark");
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [status, setStatus] = useState(null);
+  const [showPasswordRules, setShowPasswordRules] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetOtp, setResetOtp] = useState("");
   const [resetPassword, setResetPassword] = useState("");
@@ -116,13 +88,38 @@ export default function AuthPage({ onAuth }) {
     () => passwordRules.every((rule) => resetPasswordChecks[rule.id]),
     [resetPasswordChecks, passwordRules]
   );
-  const resolvedCity = city === "Other" ? customCity.trim() : city;
-  const resolvedState = stateRegion === "Other" ? customStateRegion.trim() : stateRegion;
-  const resolvedCountry = country === "Other" ? customCountry.trim() : country;
-  const locationParts = [resolvedCity, resolvedState, resolvedCountry].filter(Boolean);
-  const locationValue = locationParts.length ? locationParts.join(", ") : null;
-  const stateOptions = country ? COUNTRY_TO_STATES[country] || ["Other"] : [];
-  const cityOptions = stateRegion ? STATE_TO_CITIES[stateRegion] || ["Other"] : [];
+  const countries = useMemo(() => {
+    try {
+      return Country.getAllCountries().sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      return [];
+    }
+  }, []);
+  const selectedCountry = countries.find((entry) => entry.isoCode === country) || null;
+  const states = useMemo(() => {
+    if (!country) return [];
+    try {
+      return State.getStatesOfCountry(country).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      return [];
+    }
+  }, [country]);
+  const selectedState = states.find((entry) => entry.isoCode === stateRegion) || null;
+  const cities = useMemo(() => {
+    if (!country || !stateRegion) return [];
+    try {
+      return City.getCitiesOfState(country, stateRegion).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      return [];
+    }
+  }, [country, stateRegion]);
+  const hasGeoData = countries.length > 0;
+
+  const locationParts = hasGeoData
+    ? [city || "", selectedState?.name || "", selectedCountry?.name || ""]
+    : [manualCity.trim(), manualState.trim(), manualCountry.trim()];
+  const resolvedLocationParts = locationParts.filter(Boolean);
+  const locationValue = resolvedLocationParts.length ? resolvedLocationParts.join(", ") : null;
 
   const canSubmit = useMemo(() => {
     if (mode === "login") {
@@ -310,16 +307,29 @@ export default function AuthPage({ onAuth }) {
     <div className="min-h-screen bg-[color:var(--bg)]">
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center px-6 py-12">
         <div className="rounded-3xl border border-[color:var(--panel-border)] bg-[color:var(--panel-bg)] p-8 shadow-[0_25px_60px_rgba(0,0,0,0.2)]">
-          <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--accent)]">ToPFeed</p>
-          <h1 className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
-            {mode === "login"
-              ? "Sign in"
-              : mode === "signup"
-              ? "Create your portal"
-              : resetCompleted
-              ? "Password reset successful"
-              : "Reset your password"}
-          </h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--accent)]">ToPFeed</p>
+              <h1 className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
+                {mode === "login"
+                  ? "Sign in"
+                  : mode === "signup"
+                  ? "Create your portal"
+                  : resetCompleted
+                  ? "Password reset successful"
+                  : "Reset your password"}
+              </h1>
+            </div>
+            {mode !== "reset" && (
+              <button
+                type="button"
+                className="h-fit rounded-full border border-[color:var(--panel-border)] px-3 py-1 text-xs font-semibold text-[color:var(--muted)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
+                onClick={onAdmin}
+              >
+                Admin login
+              </button>
+            )}
+          </div>
           {!resetCompleted && (
             <p className="mt-2 text-sm text-[color:var(--muted)]">
               {mode === "login"
@@ -617,107 +627,108 @@ export default function AuthPage({ onAuth }) {
                       className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
+                      onFocus={() => setShowPasswordRules(true)}
+                      onBlur={() => setShowPasswordRules(false)}
                       placeholder="Create a password"
                       required
                     />
-                    <div className="mt-3 space-y-1 text-xs">
-                      {passwordRules.map((rule) => (
-                        <div
-                          key={`signup-${rule.id}`}
-                          className={`flex items-center justify-between ${
-                            passwordChecks[rule.id]
-                              ? "text-green-400"
-                              : "text-[color:var(--muted)]"
-                          }`}
-                        >
-                          <span>{rule.label}</span>
-                          {passwordChecks[rule.id] ? <span>✓</span> : null}
-                        </div>
-                      ))}
-                    </div>
+                    {showPasswordRules && (
+                      <div className="mt-3 space-y-1 text-xs">
+                        {passwordRules.map((rule) => (
+                          <div
+                            key={`signup-${rule.id}`}
+                            className={`flex items-center justify-between ${
+                              passwordChecks[rule.id]
+                                ? "text-green-400"
+                                : "text-[color:var(--muted)]"
+                            }`}
+                          >
+                            <span>{rule.label}</span>
+                            {passwordChecks[rule.id] ? <span>✓</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </label>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2 grid gap-4 md:grid-cols-3">
                   <label className="block text-xs font-semibold text-[color:var(--muted)]">
                     Country
-                    <select
-                      className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                      value={country}
-                      onChange={(event) => {
-                        const next = event.target.value;
-                        setCountry(next);
-                        setStateRegion("");
-                        setCustomStateRegion("");
-                        setCity("");
-                        setCustomCity("");
-                      }}
-                    >
-                      <option value="">Select country</option>
-                      {COUNTRY_OPTIONS.map((option) => (
-                        <option key={`country-${option}`} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {country === "Other" && (
+                    {hasGeoData ? (
+                      <select
+                        className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
+                        value={country}
+                        onChange={(event) => {
+                          setCountry(event.target.value);
+                          setStateRegion("");
+                          setCity("");
+                        }}
+                      >
+                        <option value="">Select country</option>
+                        {countries.map((option) => (
+                          <option key={`country-${option.isoCode}`} value={option.isoCode}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
                       <input
                         className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                        value={customCountry}
-                        onChange={(event) => setCustomCountry(event.target.value)}
+                        value={manualCountry}
+                        onChange={(event) => setManualCountry(event.target.value)}
                         placeholder="Enter country"
                       />
                     )}
                   </label>
                   <label className="block text-xs font-semibold text-[color:var(--muted)]">
                     State
-                    <select
-                      className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                      value={stateRegion}
-                      onChange={(event) => {
-                        const next = event.target.value;
-                        setStateRegion(next);
-                        setCustomStateRegion("");
-                        setCity("");
-                        setCustomCity("");
-                      }}
-                      disabled={!country}
-                    >
-                      <option value="">{country ? "Select state" : "Select country first"}</option>
-                      {stateOptions.map((option) => (
-                        <option key={`state-${option}`} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {stateRegion === "Other" && (
+                    {hasGeoData ? (
+                      <select
+                        className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
+                        value={stateRegion}
+                        onChange={(event) => {
+                          setStateRegion(event.target.value);
+                          setCity("");
+                        }}
+                        disabled={!country}
+                      >
+                        <option value="">{country ? "Select state" : "Select country first"}</option>
+                        {states.map((option) => (
+                          <option key={`state-${option.isoCode}`} value={option.isoCode}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
                       <input
                         className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                        value={customStateRegion}
-                        onChange={(event) => setCustomStateRegion(event.target.value)}
+                        value={manualState}
+                        onChange={(event) => setManualState(event.target.value)}
                         placeholder="Enter state"
                       />
                     )}
                   </label>
                   <label className="block text-xs font-semibold text-[color:var(--muted)]">
                     City
-                    <select
-                      className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                      value={city}
-                      onChange={(event) => setCity(event.target.value)}
-                      disabled={!stateRegion}
-                    >
-                      <option value="">{stateRegion ? "Select city" : "Select state first"}</option>
-                      {cityOptions.map((option) => (
-                        <option key={`city-${option}`} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {city === "Other" && (
+                    {hasGeoData ? (
+                      <select
+                        className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
+                        value={city}
+                        onChange={(event) => setCity(event.target.value)}
+                        disabled={!stateRegion}
+                      >
+                        <option value="">{stateRegion ? "Select city" : "Select state first"}</option>
+                        {cities.map((option) => (
+                          <option key={`city-${option.name}`} value={option.name}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
                       <input
                         className="mt-2 w-full rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--bg)] px-3 py-2 text-sm text-[color:var(--text)]"
-                        value={customCity}
-                        onChange={(event) => setCustomCity(event.target.value)}
+                        value={manualCity}
+                        onChange={(event) => setManualCity(event.target.value)}
                         placeholder="Enter city"
                       />
                     )}

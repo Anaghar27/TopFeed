@@ -38,6 +38,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_FROM: ${SMTP_FROM}
       SMTP_TLS: ${SMTP_TLS}
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET}
+      ADMIN_JWT_TTL_MIN: ${ADMIN_JWT_TTL_MIN}
+      ADMIN_BOOTSTRAP_KEY: ${ADMIN_BOOTSTRAP_KEY}
     volumes:
       - ./ml:/app/ml
     depends_on:

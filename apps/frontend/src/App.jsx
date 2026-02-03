@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import AdminPage from "./pages/AdminPage";
 import AuthPage from "./pages/AuthPage";
 import FeedPage from "./pages/FeedPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -88,7 +89,11 @@ export default function App() {
   }
 
   if (page === "auth") {
-    return <AuthPage onAuth={handleAuth} />;
+    return <AuthPage onAuth={handleAuth} onAdmin={() => setPage("admin")} />;
+  }
+
+  if (page === "admin") {
+    return <AdminPage onBack={() => setPage("auth")} />;
   }
 
   if (page === "profile") {
