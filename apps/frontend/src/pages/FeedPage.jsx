@@ -71,7 +71,7 @@ export default function FeedPage({ user, theme, onToggleTheme, onProfile, onLogo
   const payload = useMemo(
     () => ({
       user_id: resolvedUserId,
-      top_n: 100,
+      top_n: 50,
       history_k: 50,
       diversify: true,
       explore_level: exploreLevel,
